@@ -2,15 +2,15 @@
 
 Read this first in a new session.
 
-> **START HERE (eighth session onward):** the compute-only plan (session 6) and the pre-AWS items
-> (session 7: `MAX_QUEUE=auto`, engine admin port, graceful drain; see "Pre-AWS items" below) are **DONE**.
-> Next, in order:
-> 1. Steps 5–7 of the scaling study (section "Scaling study" below, then `docs/scaling-plan.md`): Terraform +
->    `deploy/`, then `loadtest/run.sh` and the AWS runs, then analysis.
-> 2. "Added TODOs" (T1 runbook + LLM analysis prompt, after Step 6 tooling exists; T2 frontend changes).
+> **START HERE (eighth session onward):** the compute-only plan (session 6), the pre-AWS items and Step 5
+> (`deploy/`: Terraform, inventory, render, deploy, k6 runner; session 7) are **DONE** but Step 5 was never
+> applied on AWS (no credentials/terraform here). See "Step 5" below and `deploy/README.md`. Next, in order:
+> 1. Step 6: `loadtest/run.sh <experiment> <variant>` on top of `deploy/deploy.sh` + `deploy/k6.sh`, then the
+>    AWS runs (the user runs them; first `deploy.sh smoke` will be the first real test of `deploy/`).
+> 2. Step 7 analysis, and "Added TODOs" (T1 runbook + LLM analysis prompt; T2 frontend changes).
 > Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
-> which is normal); the rehearsal stack is stopped. Sessions 6 and 7 are **not committed** yet (ask the user
-> before committing).
+> which is normal); the rehearsal stack is stopped. Sessions 6 and the pre-AWS items are committed
+> (`76ff9af`); Step 5 (`deploy/`) is **not committed** yet (ask the user).
 
 The original application plan is at
 `/home/omkar_gaddi/.claude/plans/pasted-content-id-27a5-you-are-nested-popcorn.md` (the original spec was pasted in the first session).
@@ -233,7 +233,7 @@ Build order and status:
    - Note: under the cluster, each process has its own pool, so per-worker concurrency is n × `ENGINE_CONCURRENCY`.
    - API tests: 25 pass (`test/enginePool.test.ts` and `test/routeCache.test.ts` are new). Verified locally with 3 real engines, Redis in docker, `NODE_CLUSTER=2`, tiered cache, and a worker joining through the registry.
 4. **DONE: local rehearsal** (fifth session; see "Step 4" below).
-5. TODO: Terraform + deploy scripts + monitoring.
+5. **DONE (session 7), not yet run on AWS**: Terraform + deploy scripts + monitoring (`deploy/`).
 6. TODO: AWS runs (E1 first).
 7. TODO: analysis script and report.
 
@@ -404,6 +404,45 @@ The stale engine (7070) and API processes from session 4 were killed. The rehear
 - API tests 38 pass (new: `MAX_QUEUE auto`, health check closes its connection + treats 503 as down), tsc clean;
   engine image build ran the full engine test suite.
 
+### Step 5 (session 7, 2026-09-26): `deploy/`, DONE (untested on AWS)
+- `deploy/terraform/main`: VPC 10.40.0.0/16, one public subnet in one AZ, cluster placement group, 10 ×
+  `instance_type` (validated: m6i.large|m7i.large, count ≤ 10), Ubuntu 24.04, gp3 30 GB, IMDSv2. SG: all
+  traffic within the SG; admin /32 → 22, 3000; k6 /32 → 80, 9090. ECR repos `railway-scaling/{engine,api}`
+  (`force_delete`), instance role with `AmazonEC2ContainerRegistryReadOnly`; `user_data.sh.tftpl` installs
+  docker.io, docker-compose-v2, amazon-ecr-credential-helper (credHelpers → no AWS keys on hosts), sysctls,
+  log rotation, then touches `/var/lib/railway-ready`. Region default `ap-south-1`, `aws_profile` variable.
+  `terraform.tfvars.example`. `deploy/terraform/k6`: own VPC 10.50/16, one c6i.xlarge (outside the 10-host
+  budget), Elastic IP (the main SG allows only it), docker + grafana/k6 pulled.
+- `deploy/inventory.ts`: `terraform output -json` (or `--main-output/--k6-output` files) → `deploy/inventory.json`
+  (gitignored); default roles node01–08 worker, node09 api+nginx, node10 redis+monitoring; keeps edited
+  roles; resets `deploy/.known_hosts`.
+- `deploy/render.ts <variant> [K=V…]`: `variants/defaults.env` ← `<variant>.env` ← CLI; unknown keys rejected.
+  Layout knobs `WORKERS` (all|n), `WORKERS_PER_HOST` (2 = pinned cpuset 0/1; 1 = unpinned), `WORKER_PLACEMENT`
+  (spread|pack), `ENGINE_PORT_BASE` (slot a 7070/7071, slot b 7080/7081), `PREWARM`, `GZIP`,
+  `REDIS_MAXMEMORY`, `PROMETHEUS_RETENTION`, `IMAGE_TAG` (from `.out/image-tag`). Writes `.out/<variant>/`:
+  per-host `compose.yml` (JSON; host networking; container names `<host>-<service>` so cAdvisor `name`
+  is unique), `node10/targets/*.json` (file_sd with `host` label), `plan.json` (phases, worker/api URLs,
+  gateway, git commit), `variant.env`.
+- `deploy/deploy.sh <variant> [K=V…]`: render → per host (parallel within a phase): wait first boot, rsync to
+  `/opt/railway` (+ `loadtest/grafana`, `loadtest/nginx`, `prometheus.yml`, `.env` with the Grafana password
+  from `deploy/.grafana-password`), `compose pull`, `up -d --remove-orphans --wait`. Phases: 1 engines/Redis/
+  monitoring, 2 api, 3 nginx host. Flushes Redis after phase 1 (`KEEP_CACHE=1` skips), runs the warmer if
+  `PREWARM=true`, checks every worker admin `/health` and the gateway from inside the VPC, links `.out/current`.
+- `deploy/images.sh [tag]`: ECR login, `docker build --platform linux/amd64`, push, tag = `git describe --dirty`.
+- `deploy/k6.sh <scenario>`: rsync `loadtest/` to the k6 host, run grafana/k6 (host net) with BASE_URL = gateway
+  public URL and remote write to node10:9090, fetch `summary.json` into `loadtest/results/aws/<TESTID>/` with
+  `plan.json` + `variant.env`.
+- Grafana on AWS: admin password, anonymous off. Prometheus has no admin API; reach it over an SSH tunnel.
+  Dashboard: "Host CPU busy" is now per `host`.
+- Verified offline: `terraform validate` + `fmt -check` for both (terraform 1.9.8 fetched into the scratchpad;
+  not installed on this machine, nor the AWS CLI), user_data template rendered via `terraform console`;
+  render for 16/12/2 workers, spread/pack/per-host=1, typo rejection; `docker compose config` on all 10 host
+  files; **a single-host inventory (all roles on 127.0.0.1) rendered and run locally**: API via nginx returned
+  50 routes from both engines, Prometheus scraped every file_sd target, Grafana dashboard provisioned,
+  anonymous 401, cache-warmer 1200/1200. `deploy.sh`'s SSH/rsync path itself has not run yet.
+- Not done: E14 registry join (nothing SADDs workers into `ENGINE_REGISTRY_KEY` yet), per-experiment variant
+  files (Step 6), `loadtest/run.sh`.
+
 ### Next steps, in order
 
 **Step 5: `deploy/`** (reuse `loadtest/nginx/gateway.conf.template`, the Grafana provisioning + dashboard, and the local Prometheus config
@@ -455,6 +494,8 @@ items) are not committed yet; ask the user before committing.
 - **k6 reruns with the same `SEED` are Redis cache hits** (the workload is deterministic per seed, TTL 1 h), so the
   engines sit idle. Use `SEED=$RANDOM` (or flush Redis) for any uncached measurement; check `route_cache_hit`.
 - `getaddrinfo` of a stopped docker container's name blocks ~5 s (`EAI_AGAIN`) on a libuv thread; see "Pre-AWS items".
+- Docker here is Docker Desktop (VM): `network_mode: host` ports are not reachable from the laptop and bind
+  mounts from /tmp are denied. Test host-network stacks from a `--network host` container, with files under the repo.
 
 ## Added TODOs (user request, end of session 5; not started)
 

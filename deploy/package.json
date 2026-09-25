@@ -1,0 +1,5 @@
+{
+  "name": "railway-deploy",
+  "private": true,
+  "type": "module"
+}

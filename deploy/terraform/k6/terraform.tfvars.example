@@ -1,0 +1,4 @@
+# cp terraform.tfvars.example terraform.tfvars (gitignored), then terraform apply (second AWS account)
+admin_cidr = "203.0.113.10/32"
+# aws_profile = "k6-account"
+# region      = "ap-south-1"

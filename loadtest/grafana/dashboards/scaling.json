@@ -1045,8 +1045,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[$__rate_interval]))",
-     "legendFormat": "host CPU busy (0-1)",
+     "expr": "1 - avg by (host) (rate(node_cpu_seconds_total{mode=\"idle\"}[$__rate_interval]))",
+     "legendFormat": "CPU busy {{host}} (0-1)",
      "datasource": {
       "type": "prometheus",
       "uid": "prom"

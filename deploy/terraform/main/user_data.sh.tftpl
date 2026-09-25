@@ -1,0 +1,36 @@
+#!/bin/bash
+# Runs once at first boot: Docker + compose, ECR pulls through the instance role, and kernel
+# settings for load testing. deploy/deploy.sh waits for /var/lib/railway-ready.
+set -euxo pipefail
+hostnamectl set-hostname ${hostname}
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends docker.io docker-compose-v2 amazon-ecr-credential-helper rsync jq
+usermod -aG docker ubuntu
+
+# docker pull from ECR uses the instance role; no AWS keys on the host
+for home in /root /home/ubuntu; do
+  mkdir -p "$home/.docker"
+  echo '{"credHelpers": {"${registry}": "ecr-login"}}' > "$home/.docker/config.json"
+done
+chown -R ubuntu:ubuntu /home/ubuntu/.docker
+
+cat > /etc/sysctl.d/90-loadtest.conf <<'SYSCTL'
+net.core.somaxconn = 4096
+net.ipv4.tcp_max_syn_backlog = 4096
+net.ipv4.ip_local_port_range = 10240 65535
+net.ipv4.tcp_tw_reuse = 1
+net.core.netdev_max_backlog = 4096
+fs.file-max = 1048576
+SYSCTL
+sysctl --system
+
+# docker's own default ulimit (nofile 1048576) applies to containers; log rotation for all of them
+cat > /etc/docker/daemon.json <<'DOCKER'
+{"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "2"}}
+DOCKER
+systemctl restart docker
+
+mkdir -p /opt/railway && chown ubuntu:ubuntu /opt/railway
+touch /var/lib/railway-ready

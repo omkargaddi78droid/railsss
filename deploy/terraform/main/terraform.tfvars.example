@@ -1,0 +1,6 @@
+# cp terraform.tfvars.example terraform.tfvars (gitignored), then terraform apply
+admin_cidr = "203.0.113.10/32" # your IP: curl -s https://checkip.amazonaws.com
+k6_cidr    = "198.51.100.7/32" # terraform -chdir=../k6 output -raw k6_cidr
+# aws_profile   = "study"
+# region        = "ap-south-1"
+# instance_type = "m7i.large"

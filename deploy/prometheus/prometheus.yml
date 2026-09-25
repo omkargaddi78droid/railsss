@@ -1,0 +1,21 @@
+# AWS study Prometheus (monitoring host). Targets come from file_sd files that deploy/render.ts
+# generates from the inventory and the active variant; Prometheus re-reads them on change.
+# k6 pushes its samples by remote write (--web.enable-remote-write-receiver).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: engine
+    file_sd_configs: [{ files: [/etc/prometheus/targets/engine.json] }]
+  - job_name: api
+    file_sd_configs: [{ files: [/etc/prometheus/targets/api.json] }]
+  - job_name: nginx
+    file_sd_configs: [{ files: [/etc/prometheus/targets/nginx.json] }]
+  - job_name: node
+    file_sd_configs: [{ files: [/etc/prometheus/targets/node.json] }]
+  - job_name: cadvisor
+    file_sd_configs: [{ files: [/etc/prometheus/targets/cadvisor.json] }]
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
