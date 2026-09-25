@@ -1,0 +1,8 @@
+**/node_modules
+**/.next
+**/build
+**/.git
+**/*.log
+data/processed
+data/reports
+.env

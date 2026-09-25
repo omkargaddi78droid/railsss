@@ -1,0 +1,20 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# dependencies and build output
+node_modules/
+.next/
+routing-engine/build/
+*.tsbuildinfo
+next-env.d.ts
+
+# generated data (rebuild with: cd scripts && node preprocess.ts)
+data/processed/
+
+# editor / OS / logs
+.vscode/
+.idea/
+.DS_Store
+*.log

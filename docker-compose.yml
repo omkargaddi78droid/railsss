@@ -1,0 +1,105 @@
+# Full stack: MongoDB, C++ routing engine, Node API, Next.js frontend.
+# Only the frontend is published; engine, API and MongoDB stay on the internal network.
+#   cp .env.example .env && docker compose up -d --build
+
+name: railway-routing
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?set MONGO_ROOT_USER in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+    logging: *logging
+
+  engine:
+    build:
+      context: .
+      dockerfile: routing-engine/Dockerfile
+    image: railway-routing/engine:latest
+    restart: unless-stopped
+    environment:
+      ENGINE_PORT: 7070
+      ENGINE_THREADS: ${ENGINE_THREADS:-8}
+      MIN_TRANSFER_MINUTES: ${MIN_TRANSFER_MINUTES:-30}
+      MAX_TRANSFERS_INTERNAL: ${MAX_TRANSFERS_INTERNAL:-10}
+      TOP_K: 20
+      K_NODE: ${K_NODE:-0}
+      SEARCH_HORIZON_MINUTES: ${SEARCH_HORIZON_MINUTES:-5760}
+      MAX_LABELS: ${MAX_LABELS:-200000}
+    networks: [backend]
+    logging: *logging
+
+  seed:
+    # One-shot job: loads normalized stations/trains/quality report into MongoDB.
+    image: railway-routing/api:latest
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    command: ["node", "src/scripts/seed-mongo.ts"]
+    restart: "no"
+    environment:
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MONGODB_DB: ${MONGODB_DB:-railway}
+    depends_on:
+      mongo: { condition: service_healthy }
+    networks: [backend]
+    logging: *logging
+
+  api:
+    image: railway-routing/api:latest
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_PORT: 4000
+      ENGINE_URL: http://engine:7070
+      ENGINE_TIMEOUT_MS: ${ENGINE_TIMEOUT_MS:-5000}
+      ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-4}
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MONGODB_DB: ${MONGODB_DB:-railway}
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      CACHE_MAX_ENTRIES: ${CACHE_MAX_ENTRIES:-1000}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-3600}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      engine: { condition: service_healthy }
+      seed: { condition: service_completed_successfully }
+    networks: [backend, frontend]
+    logging: *logging
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: railway-routing/frontend:latest
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - "${PUBLIC_PORT:-80}:3000"
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [frontend]
+    logging: *logging
+
+networks:
+  backend:
+  frontend:
+
+volumes:
+  mongo-data:
