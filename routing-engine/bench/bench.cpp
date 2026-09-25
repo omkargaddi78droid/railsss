@@ -1,10 +1,13 @@
 // Benchmark on the real processed dataset.
 //   bench [timetable.json] [num_random_queries] [date] [k_node] [max_labels]
 // Prints load time, then per-query percentiles for engine time, and a sample itinerary.
+// BENCH_DUMP=file.csv also writes one row per random query (source,destination,time,ms,labels_popped,
+// truncated,routes); the load test picks its "heavy" workload from the slowest rows.
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <random>
 #include <string>
@@ -40,7 +43,7 @@ int main(int argc, char** argv) {
 
   // Sample itinerary for the headline query.
   {
-    Query q{tt.find_station("BD"), tt.find_station("NDLS"), day, 600, 20};
+    Query q{tt.find_station("BD"), tt.find_station("NDLS"), day, 600, cfg.top_k};
     if (q.source >= 0 && q.destination >= 0) {
       const RouteResult r = router.route(q);
       std::printf("\nBD -> NDLS %s 10:00: %zu routes in %.2f ms (setup %.2f, profile %.2f, search %.2f; labels %llu popped %llu capped %llu)\n",
@@ -72,27 +75,41 @@ int main(int argc, char** argv) {
   uint64_t max_labels = 0;
   double worst = 0;
   std::string worst_q;
+  FILE* dump = nullptr;
+  if (const char* dump_path = std::getenv("BENCH_DUMP")) {
+    dump = std::fopen(dump_path, "w");
+    if (!dump) {
+      std::fprintf(stderr, "cannot write %s\n", dump_path);
+      return 1;
+    }
+    std::fprintf(dump, "source,destination,time,ms,labels_popped,truncated,routes\n");
+  }
   for (int i = 0; i < n; ++i) {
-    Query q{candidates[pick(rng)], candidates[pick(rng)], day, tod(rng) * 60, 20};
+    Query q{candidates[pick(rng)], candidates[pick(rng)], day, tod(rng) * 60, cfg.top_k};
     if (q.source == q.destination) continue;
     const RouteResult r = router.route(q);
     total.push_back(r.stats.total_ms);
     profile.push_back(r.stats.profile_ms);
     search.push_back(r.stats.search_ms);
     found += !r.journeys.empty();
-    full += r.journeys.size() == 20;
+    full += r.journeys.size() == static_cast<size_t>(cfg.top_k);
     truncated += r.stats.truncated;
     max_labels = std::max<uint64_t>(max_labels, r.stats.labels_created);
+    if (dump)
+      std::fprintf(dump, "%s,%s,%02d:00,%.3f,%llu,%d,%zu\n", tt.stations[q.source].code.c_str(), tt.stations[q.destination].code.c_str(),
+                   q.time_minute / 60, r.stats.total_ms, (unsigned long long)r.stats.labels_popped, r.stats.truncated ? 1 : 0,
+                   r.journeys.size());
     if (r.stats.total_ms > worst) {
       worst = r.stats.total_ms;
       worst_q = tt.stations[q.source].code + "->" + tt.stations[q.destination].code + " " + std::to_string(q.time_minute / 60) + ":00";
     }
   }
-  std::printf("\n%zu random queries: with_route=%zu full_20=%zu truncated=%zu max_labels=%llu\n", total.size(), found, full, truncated,
+  std::printf("\n%zu random queries: with_route=%zu full_top_k=%zu truncated=%zu max_labels=%llu\n", total.size(), found, full, truncated,
               (unsigned long long)max_labels);
   std::printf("engine total ms  p50 %.2f  p90 %.2f  p95 %.2f  p99 %.2f  max %.2f (%s)\n", pct(total, .5), pct(total, .9), pct(total, .95),
               pct(total, .99), worst, worst_q.c_str());
   std::printf("profile ms       p50 %.2f  p95 %.2f\n", pct(profile, .5), pct(profile, .95));
   std::printf("search ms        p50 %.2f  p95 %.2f\n", pct(search, .5), pct(search, .95));
+  if (dump) std::fclose(dump);
   return 0;
 }

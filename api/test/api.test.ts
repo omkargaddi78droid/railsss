@@ -7,6 +7,7 @@ import { EngineError, Semaphore, type EngineQuery, type EngineResult, type Engin
 import { RouteCache } from "../src/services/routeCache.ts";
 import { RouteService, NO_ROUTE_MESSAGE } from "../src/services/routeService.ts";
 import { StationService } from "../src/services/stationService.ts";
+import { FakeRemote } from "./fakeRemote.ts";
 
 const STATIONS = [
   { code: "BD", name: "BADNERA JN.", all_known_names: ["BADNERA JN."], train_count: 47 },
@@ -50,7 +51,7 @@ class FakeEngine implements RoutingEngine {
 function setup(cacheEnabled = true) {
   const engine = new FakeEngine();
   const stations = new StationService(STATIONS, "test");
-  const routes = new RouteService(engine, stations, new RouteCache<EngineResult>(100, 60, cacheEnabled), 20);
+  const routes = new RouteService(engine, stations, new RouteCache<EngineResult>(cacheEnabled ? new FakeRemote() : null, 60), 20);
   const app = createApp({ logger: createLogger("silent"), stations, routes, engine, maxResults: 20, maxDurationFilterMinutes: 3000 });
   return { app, engine };
 }
@@ -165,17 +166,14 @@ test("station prefix search ranks exact code, code prefix, then name prefix", as
   assert.equal((await request(app).get("/api/stations/NOPE")).status, 404);
 });
 
-test("cache: LRU eviction and in-flight coalescing", async () => {
-  const c = new RouteCache<number>(2, 60);
+test("cache: in-flight coalescing", async () => {
+  const c = new RouteCache<number>(new FakeRemote(), 60);
   let calls = 0;
   const slow = () => new Promise<number>((r) => setTimeout(() => r(++calls), 10));
   const [a, b] = await Promise.all([c.getOrCompute("k", slow), c.getOrCompute("k", slow)]);
   assert.equal(calls, 1);
   assert.equal(a.value, b.value);
-  await c.getOrCompute("k2", slow);
-  await c.getOrCompute("k3", slow);
-  assert.equal(c.size, 2);
-  assert.equal((await c.getOrCompute("k", slow)).cached, false); // evicted
+  assert.equal(c.coalesced, 1);
 });
 
 test("Semaphore caps concurrency, grants FIFO and drops aborted waiters", async () => {

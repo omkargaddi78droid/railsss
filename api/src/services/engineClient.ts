@@ -68,12 +68,13 @@ export interface EngineResult {
   routes: EngineRoute[];
   stats: Record<string, number | boolean>;
   search_complete: boolean;
+  worker?: string;           // WORKER_ID of the engine process that computed it
 }
 
 export class EngineError extends Error {
   readonly status: number;
-  readonly kind: "invalid" | "unavailable";
-  constructor(message: string, status: number, kind: "invalid" | "unavailable") {
+  readonly kind: "invalid" | "unavailable" | "overloaded";
+  constructor(message: string, status: number, kind: "invalid" | "unavailable" | "overloaded") {
     super(message);
     this.status = status;
     this.kind = kind;
@@ -120,6 +121,26 @@ export class Semaphore {
   }
 }
 
+// One POST /route call to one engine process. Invalid queries are 400s; anything else that fails is
+// "unavailable", which a pool may retry on another worker.
+export async function postRoute(baseUrl: string, q: EngineQuery, signal: AbortSignal): Promise<EngineResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/route`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(q),
+      signal,
+    });
+  } catch (e) {
+    throw new EngineError(`routing engine unreachable: ${(e as Error).message}`, 503, "unavailable");
+  }
+  const body = (await res.json().catch(() => null)) as any;
+  if (res.status === 400) throw new EngineError(body?.error ?? "invalid query", 400, "invalid");
+  if (!res.ok || !body) throw new EngineError(`routing engine error (HTTP ${res.status})`, 502, "unavailable");
+  return body as EngineResult;
+}
+
 export class HttpRoutingEngine implements RoutingEngine {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -139,21 +160,7 @@ export class HttpRoutingEngine implements RoutingEngine {
       throw new EngineError(`routing engine busy: ${(e as Error).message}`, 503, "unavailable");
     }
     try {
-      let res: Response;
-      try {
-        res = await fetch(`${this.baseUrl}/route`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(q),
-          signal,
-        });
-      } catch (e) {
-        throw new EngineError(`routing engine unreachable: ${(e as Error).message}`, 503, "unavailable");
-      }
-      const body = (await res.json().catch(() => null)) as any;
-      if (res.status === 400) throw new EngineError(body?.error ?? "invalid query", 400, "invalid");
-      if (!res.ok || !body) throw new EngineError(`routing engine error (HTTP ${res.status})`, 502, "unavailable");
-      return body as EngineResult;
+      return await postRoute(this.baseUrl, q, signal);
     } finally {
       this.slots.release();
     }

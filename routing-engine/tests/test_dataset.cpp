@@ -92,12 +92,12 @@ TEST_CASE("real dataset: every returned journey satisfies the routing rules") {
 
   const int32_t day = *parse_date("2026-09-25");
   for (int i = 0; i < 200; ++i) {
-    Query q{cand[rng() % cand.size()], cand[rng() % cand.size()], day + static_cast<int32_t>(rng() % 7), static_cast<int32_t>(rng() % 1440), 20};
+    Query q{cand[rng() % cand.size()], cand[rng() % cand.size()], day + static_cast<int32_t>(rng() % 7), static_cast<int32_t>(rng() % 1440), 50};
     if (q.source == q.destination) continue;
     check_query(q);
   }
   // Headline query from the specification.
-  check_query(Query{tt.find_station("BD"), tt.find_station("NDLS"), day, 600, 20});
+  check_query(Query{tt.find_station("BD"), tt.find_station("NDLS"), day, 600, 50});
   MESSAGE(with_routes << " queries with routes, " << journeys << " journeys checked, " << multi_transfer << " with >= 2 transfers");
   CHECK(with_routes > 100);
 }

@@ -192,7 +192,7 @@ TEST_CASE("engine equals brute force on random timetables") {
     RouterConfig cfg;
     cfg.max_transfers = 3;
     cfg.horizon_minutes = 2880;
-    cfg.top_k = 20;
+    cfg.top_k = 50;  // the production default
     cfg.max_labels = 50'000'000;
     cfg.prune_stay_on = iter % 5 != 1;
     cfg.prune_board_earlier = iter % 5 != 2;
@@ -201,12 +201,12 @@ TEST_CASE("engine equals brute force on random timetables") {
       const int32_t s = static_cast<int32_t>(rng() % tt.stations.size());
       const int32_t d = static_cast<int32_t>(rng() % tt.stations.size());
       if (s == d) continue;
-      const Query q{s, d, *parse_date("2026-09-25") + static_cast<int32_t>(rng() % 7), static_cast<int32_t>(rng() % 1440), 20};
+      const Query q{s, d, *parse_date("2026-09-25") + static_cast<int32_t>(rng() % 7), static_cast<int32_t>(rng() % 1440), cfg.top_k};
       const RouteResult res = router.route(q);
       REQUIRE_FALSE(res.stats.truncated);
       Oracle oracle(tt, cfg, q);
       const auto expect = oracle.run();
-      const size_t n = std::min<size_t>(expect.size(), 20);
+      const size_t n = std::min<size_t>(expect.size(), static_cast<size_t>(cfg.top_k));
       INFO("iter " << iter << " query " << tt.stations[s].code << "->" << tt.stations[d].code);
       if (res.journeys.size() != n) {
         for (const auto& e : expect) MESSAGE("want " << std::get<0>(e.first) << " " << -std::get<1>(e.first) << " tr" << std::get<2>(e.first) << " w" << std::get<3>(e.first) << " " << e.second);

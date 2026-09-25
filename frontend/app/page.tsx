@@ -1,15 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilterPanel } from "@/components/FilterPanel";
 import { JourneyCard } from "@/components/JourneyCard";
+import { MapPanel } from "@/components/MapPanel";
 import { SearchForm, type SearchInput } from "@/components/SearchForm";
-import { RequestError, searchRoutes } from "@/lib/api";
-import { applyFilters, FILTER_DEFAULTS, type FilterState } from "@/lib/filters";
+import { SortBar } from "@/components/SortBar";
+import { highlightBadges, SummaryStrip } from "@/components/SummaryStrip";
+import { MAX_RESULTS, RequestError, searchRoutes } from "@/lib/api";
+import {
+  activeFilterCount,
+  applyFilters,
+  deriveOptions,
+  FILTER_DEFAULTS,
+  filtersFromParams,
+  filtersToParams,
+  sortJourneys,
+  type FilterState,
+  type SortKey,
+} from "@/lib/filters";
 import { hhmm, shortDate, todayIso } from "@/lib/format";
 import type { RouteResponse, StationHit } from "@/lib/types";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 10;
 
 type State =
   | { kind: "idle" }
@@ -17,17 +30,29 @@ type State =
   | { kind: "error"; message: string }
   | { kind: "done"; data: RouteResponse };
 
+type Search = { from: StationHit; to: StationHit; date: string; time: string };
+
 export default function Home() {
   const [initial, setInitial] = useState<SearchInput | null>(null);
   const [state, setState] = useState<State>({ kind: "idle" });
   const [filters, setFilters] = useState<FilterState>(FILTER_DEFAULTS);
+  const [sort, setSort] = useState<SortKey>("arrival");
   const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "map">("list"); // below lg only
+  const [filtersOpen, setFiltersOpen] = useState(false); // below xl only
+  const [draft, setDraft] = useState<{ from: StationHit | null; to: StationHit | null }>({ from: null, to: null });
+  const lastSearch = useRef<Search | null>(null);
 
-  const run = useCallback(async (v: { from: StationHit; to: StationHit; date: string; time: string }) => {
+  const run = useCallback(async (v: Search, opts: { fresh: boolean }) => {
+    lastSearch.current = v;
     setState({ kind: "loading" });
     setPage(1);
-    const params = new URLSearchParams({ from: v.from.code, to: v.to.code, date: v.date, time: v.time });
-    window.history.replaceState(null, "", `?${params}`);
+    setSelectedId(null);
+    setDraft({ from: v.from, to: v.to });
+    // A new search from the form drops the filters tied to the old results (stations, trains).
+    if (opts.fresh) setFilters((f) => ({ ...f, viaStations: [], excludedTrains: [] }));
     try {
       const data = await searchRoutes({ source: v.from.code, destination: v.to.code, date: v.date, time: v.time });
       setState({ kind: "done", data });
@@ -37,9 +62,12 @@ export default function Home() {
     }
   }, []);
 
-  // Restore a shared search from the URL (?from=BD&to=NDLS&date=...&time=...).
+  // Restore a shared search (and its filters) from the URL: ?from=BD&to=NDLS&date=...&time=...&via=...
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
+    const restored = filtersFromParams(p);
+    setFilters(restored.filters);
+    setSort(restored.sort);
     const now = new Date();
     const base: SearchInput = {
       from: null,
@@ -53,119 +81,284 @@ export default function Home() {
       .then(([from, to]) => {
         const v = { ...base, from, to };
         setInitial(v);
-        if (from && to) void run({ from, to, date: v.date, time: v.time });
+        setDraft({ from, to });
+        if (from && to) void run({ from, to, date: v.date, time: v.time }, { fresh: false });
       })
       .catch(() => setInitial(base));
   }, [run]);
 
-  const all = state.kind === "done" ? state.data.routes : [];
+  // Keep the URL shareable: search + filters + sort.
+  useEffect(() => {
+    const s = lastSearch.current;
+    if (!s && state.kind === "idle") return;
+    const p = new URLSearchParams();
+    if (s) {
+      p.set("from", s.from.code);
+      p.set("to", s.to.code);
+      p.set("date", s.date);
+      p.set("time", s.time);
+    }
+    filtersToParams(filters, sort, p);
+    window.history.replaceState(null, "", `?${p}`);
+  }, [filters, sort, state.kind]);
+
+  const all = useMemo(() => (state.kind === "done" ? state.data.routes : []), [state]);
+  const options = useMemo(() => deriveOptions(all), [all]);
   const filtered = useMemo(() => applyFilters(all, filters), [all, filters]);
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  useEffect(() => setPage(1), [filters]);
+  const sorted = useMemo(() => sortJourneys(filtered, sort), [filtered, sort]);
+  const badges = useMemo(() => highlightBadges(filtered), [filtered]);
+  const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const shown = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const nFilters = activeFilterCount(filters);
+
+  useEffect(() => setPage(1), [filters, sort]);
+  // Keep a journey selected for the map: the first one, unless the current pick is still listed.
+  useEffect(() => {
+    if (!sorted.some((j) => j.id === selectedId)) setSelectedId(sorted[0]?.id ?? null);
+  }, [sorted, selectedId]);
+
+  /** Select a journey and bring its card into view (from the summary tiles and the map). */
+  const reveal = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      const i = sorted.findIndex((j) => j.id === id);
+      if (i >= 0) setPage(Math.floor(i / PAGE_SIZE) + 1);
+      requestAnimationFrame(() => document.getElementById(`journey-${id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    },
+    [sorted],
+  );
+
+  const excludeTrain = (n: string) => setFilters((f) => (f.excludedTrains.includes(n) ? f : { ...f, excludedTrains: [...f.excludedTrains, n] }));
+  const done = state.kind === "done";
 
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-16">
-      <header className="flex items-center gap-3 py-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="5" y="3" width="14" height="13" rx="3" />
-            <path d="M5 11h14M9 20l-2 2M15 20l2 2M9 16v4M15 16v4" />
-          </svg>
-        </div>
-        <div>
-          <h1 className="text-lg font-bold leading-tight">RailRoute</h1>
-          <p className="text-xs text-slate-500">The 20 earliest-arriving journeys, transfers included</p>
-        </div>
-      </header>
-
-      {initial ? (
-        <SearchForm initial={initial} loading={state.kind === "loading"} onSearch={run} />
-      ) : (
-        <div className="card h-[172px] animate-pulse" />
-      )}
-
-      <section className="mt-6" aria-live="polite">
-        {state.kind === "idle" && (
-          <div className="card p-8 text-center text-sm text-slate-500">
-            Pick a source and destination. Direct trains and multi-transfer connections are ranked together by arrival time.
-          </div>
-        )}
-        {state.kind === "loading" && (
-          <div className="space-y-3">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="card h-36 animate-pulse" />
-            ))}
-          </div>
-        )}
-        {state.kind === "error" && (
-          <div role="alert" className="card border-rose-200 p-5 text-sm text-rose-700 dark:border-rose-900 dark:text-rose-300">
-            {state.message}
-          </div>
-        )}
-        {state.kind === "done" && (
-          <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-            <div className="lg:sticky lg:top-4 lg:self-start">
-              <FilterPanel value={filters} onChange={setFilters} total={all.length} shown={filtered.length} />
+    <main className="pb-16">
+      {/* hero band behind the search form */}
+      <div className="relative overflow-hidden bg-linear-to-br from-brand-700 via-brand-600 to-indigo-900 pb-24 text-white dark:from-brand-900 dark:via-slate-900 dark:to-slate-950">
+        <svg className="absolute inset-0 h-full w-full opacity-[0.07]" aria-hidden>
+          <defs>
+            <pattern id="rails" width="48" height="48" patternUnits="userSpaceOnUse">
+              <path d="M0 24h48M0 30h48M8 20v14M24 20v14M40 20v14" stroke="white" strokeWidth="1.5" fill="none" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#rails)" />
+        </svg>
+        <div className="relative mx-auto max-w-[1440px] px-4">
+          <header className="flex items-center gap-3 py-5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="3" width="14" height="13" rx="3" />
+                <path d="M5 11h14M9 20l-2 2M15 20l2 2M9 16v4M15 16v4" />
+              </svg>
             </div>
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
-                <h2 className="text-sm">
-                  <span className="font-semibold">{state.data.query.source_name}</span> <span className="text-slate-400">({state.data.query.source})</span>
-                  <span className="mx-2 text-slate-400">→</span>
-                  <span className="font-semibold">{state.data.query.destination_name}</span> <span className="text-slate-400">({state.data.query.destination})</span>
-                </h2>
-                <p className="text-xs text-slate-500">
-                  from {shortDate(state.data.query.search_datetime)} {hhmm(state.data.query.search_datetime)}
-                  {state.data.meta.engine_ms !== null && <> · routed in {state.data.meta.engine_ms.toFixed(0)} ms</>}
-                </p>
-              </div>
-              {!state.data.meta.search_complete && all.length > 0 && (
-                <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                  The search reached its work limit; the journeys shown are the fastest found, in exact order, but there may be fewer than 20.
-                </p>
-              )}
-              {all.length === 0 && (
-                <div className="card p-8 text-center text-sm text-slate-500">{state.data.message ?? "No valid journey found for the specified date and time."}</div>
-              )}
-              {all.length > 0 && filtered.length === 0 && (
-                <div className="card p-8 text-center text-sm text-slate-500">
-                  No journey matches the selected filters.{" "}
-                  <button className="font-medium text-brand-600 hover:underline" onClick={() => setFilters(FILTER_DEFAULTS)}>
-                    Reset filters
+            <span className="text-lg font-bold tracking-tight">RailRoute</span>
+            <span className="ml-auto hidden text-xs text-white/70 sm:block">Exact K-best earliest-arrival routing · 2,894 stations · 1,725 trains</span>
+          </header>
+          {done ? (
+            <h1 className="sr-only">Journeys</h1>
+          ) : (
+            <div className="pb-4 pt-6">
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Find the fastest way there, changes included.</h1>
+              <p className="mt-2 max-w-2xl text-sm text-white/75 sm:text-base">
+                Direct trains and multi-transfer connections are ranked together by arrival time. The 50 best journeys, drawn on the map.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="relative mx-auto -mt-20 max-w-[1440px] px-4">
+        {initial ? (
+          <SearchForm
+            initial={initial}
+            loading={state.kind === "loading"}
+            onSearch={(v) => void run(v, { fresh: true })}
+            onStationsChange={(from, to) => setDraft({ from, to })}
+          />
+        ) : (
+          <div className="card h-[180px] animate-pulse" />
+        )}
+
+        {done && (
+          <div className="mt-6 flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-1">
+            <h2 className="min-w-0 text-sm">
+              <span className="font-semibold">{state.data.query.source_name}</span> <span className="font-mono text-xs text-slate-400">{state.data.query.source}</span>
+              <span className="mx-2 text-slate-400">→</span>
+              <span className="font-semibold">{state.data.query.destination_name}</span>{" "}
+              <span className="font-mono text-xs text-slate-400">{state.data.query.destination}</span>
+            </h2>
+            <p className="text-xs text-slate-500">
+              from {shortDate(state.data.query.search_datetime)} {hhmm(state.data.query.search_datetime)}
+              {state.data.meta.engine_ms !== null && <> · routed in {state.data.meta.engine_ms.toFixed(0)} ms</>}
+              {state.data.meta.cached && <> · cached</>}
+            </p>
+          </div>
+        )}
+
+        <div id="results" className={`mt-4 grid scroll-mt-4 gap-5 ${done ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[290px_minmax(0,1fr)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]"}`}>
+          {done && (
+            <>
+              {filtersOpen && <div className="fixed inset-0 z-[1000] bg-slate-950/40 backdrop-blur-sm xl:hidden" onClick={() => setFiltersOpen(false)} aria-hidden />}
+              <div
+                className={`scroll-thin fixed inset-y-0 left-0 z-[1001] w-[330px] max-w-[88vw] overflow-y-auto bg-slate-50 p-3 shadow-2xl transition-transform duration-300 dark:bg-slate-950 xl:sticky xl:top-4 xl:z-auto xl:max-h-[calc(100vh-2rem)] xl:w-auto xl:max-w-none xl:translate-x-0 xl:self-start xl:bg-transparent xl:p-0 xl:shadow-none dark:xl:bg-transparent ${
+                  filtersOpen ? "translate-x-0" : "-translate-x-full"
+                }`}
+              >
+                <div className="mb-2 flex justify-end xl:hidden">
+                  <button className="toggle" onClick={() => setFiltersOpen(false)}>
+                    Done
                   </button>
                 </div>
-              )}
-              {shown.map((j) => (
-                <JourneyCard key={j.id} j={j} fastest={j.rank === 1} />
-              ))}
-              {pages > 1 && (
-                <nav className="flex items-center justify-center gap-1 pt-2" aria-label="Pagination">
-                  <button className="rounded-lg px-3 py-1.5 text-sm disabled:opacity-40" disabled={page === 1} onClick={() => setPage(page - 1)}>
-                    ‹ Prev
-                  </button>
-                  {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
-                    <button
-                      key={p}
-                      aria-current={p === page ? "page" : undefined}
-                      onClick={() => setPage(p)}
-                      className={`tabular h-8 w-8 rounded-lg text-sm ${p === page ? "bg-brand-600 font-semibold text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
-                    >
-                      {p}
-                    </button>
+                <FilterPanel value={filters} onChange={setFilters} options={options} total={all.length} shown={filtered.length} />
+              </div>
+            </>
+          )}
+
+          {/* list column */}
+          <section className={`min-w-0 space-y-3 ${view === "map" ? "hidden lg:block" : ""}`} aria-live="polite">
+            {state.kind === "idle" && (
+              <div className="card space-y-4 p-6 text-sm text-slate-600 dark:text-slate-300">
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">How it works</h2>
+                <ol className="space-y-3">
+                  {[
+                    ["Pick two stations", "Type a name or a code. The map pins them as you go."],
+                    ["Search", "The engine finds the 50 earliest-arriving journeys, with up to 10 changes of train and at least 30 minutes to change."],
+                    ["Narrow it down", "Choose where you are happy to change trains, which train types, times of day and how long you will wait."],
+                  ].map(([t, d], i) => (
+                    <li key={t} className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                        {i + 1}
+                      </span>
+                      <span>
+                        <span className="font-medium text-slate-900 dark:text-white">{t}.</span> {d}
+                      </span>
+                    </li>
                   ))}
-                  <button className="rounded-lg px-3 py-1.5 text-sm disabled:opacity-40" disabled={page === pages} onClick={() => setPage(page + 1)}>
-                    Next ›
+                </ol>
+              </div>
+            )}
+            {state.kind === "loading" &&
+              [0, 1, 2].map((i) => (
+                <div key={i} className="card space-y-3 p-4">
+                  <div className="h-4 w-1/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-8 animate-pulse rounded bg-slate-100 dark:bg-slate-800/70" />
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-slate-100 dark:bg-slate-800/70" />
+                </div>
+              ))}
+            {state.kind === "error" && (
+              <div role="alert" className="card border-rose-200 p-5 text-sm text-rose-700 dark:border-rose-900 dark:text-rose-300">
+                {state.message}
+              </div>
+            )}
+            {done && (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="toggle xl:hidden" aria-pressed={nFilters > 0} onClick={() => setFiltersOpen(true)}>
+                    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
+                      <path d="M3 5a1 1 0 0 1 1-1h12a1 1 0 0 1 .8 1.6L12 11.3V16a1 1 0 0 1-1.4.9l-2-1A1 1 0 0 1 8 15v-3.7L3.2 5.6A1 1 0 0 1 3 5Z" />
+                    </svg>
+                    Filters{nFilters > 0 && ` (${nFilters})`}
                   </button>
-                </nav>
-              )}
-            </div>
+                  <span className="text-xs text-slate-500">
+                    {filtered.length} of {all.length} journeys
+                  </span>
+                  <div className="ml-auto">
+                    <SortBar value={sort} onChange={setSort} />
+                  </div>
+                </div>
+                <SummaryStrip journeys={filtered} selectedId={selectedId} onPick={reveal} />
+                {!state.data.meta.search_complete && all.length > 0 && (
+                  <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                    The search reached its work limit; the journeys shown are the fastest found, in exact order, but there may be fewer than {MAX_RESULTS}.
+                  </p>
+                )}
+                {all.length === 0 && (
+                  <div className="card p-8 text-center text-sm text-slate-500">{state.data.message ?? "No valid journey found for the specified date and time."}</div>
+                )}
+                {all.length > 0 && filtered.length === 0 && (
+                  <div className="card p-8 text-center text-sm text-slate-500">
+                    No journey matches the selected filters.{" "}
+                    <button className="font-medium text-brand-600 hover:underline" onClick={() => setFilters(FILTER_DEFAULTS)}>
+                      Reset filters
+                    </button>
+                  </div>
+                )}
+                {shown.map((j) => (
+                  <JourneyCard
+                    key={j.id}
+                    j={j}
+                    badges={badges.get(j.id) ?? []}
+                    selected={j.id === selectedId}
+                    onSelect={() => setSelectedId(j.id)}
+                    onHover={(on) => setHoverId(on ? j.id : null)}
+                    onExcludeTrain={excludeTrain}
+                  />
+                ))}
+                {pages > 1 && (
+                  <nav className="flex items-center justify-center gap-1 pt-2" aria-label="Pagination">
+                    <button className="rounded-lg px-3 py-1.5 text-sm disabled:opacity-40" disabled={page === 1} onClick={() => setPage(page - 1)}>
+                      ‹ Prev
+                    </button>
+                    {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        aria-current={p === page ? "page" : undefined}
+                        onClick={() => setPage(p)}
+                        className={`tabular h-8 w-8 rounded-lg text-sm ${p === page ? "bg-brand-600 font-semibold text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button className="rounded-lg px-3 py-1.5 text-sm disabled:opacity-40" disabled={page === pages} onClick={() => setPage(page + 1)}>
+                      Next ›
+                    </button>
+                  </nav>
+                )}
+              </>
+            )}
+          </section>
+
+          {/* map column: sticky beside the list on large screens, a separate view on small ones */}
+          <MapPanel
+            journeys={sorted}
+            selectedId={selectedId}
+            hoverId={hoverId}
+            onSelect={reveal}
+            endpoints={draft}
+            className={
+              done
+                ? `h-[70vh] lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:self-start ${view === "list" ? "hidden lg:block" : ""}`
+                : "h-[380px] sm:h-[460px] lg:h-auto lg:min-h-[460px]"
+            }
+          />
+        </div>
+
+        <footer className="mt-12 text-center text-xs text-slate-400">
+          Times are timetable times (IST). Minimum transfer time 30 minutes. Routing: exact K-best earliest-arrival search in C++. Station locations: datameet
+          (CC0), map tiles © Esri, OpenStreetMap contributors.
+        </footer>
+      </div>
+
+      {/* List / Map switch for small screens */}
+      {done && all.length > 0 && (
+        <div className="fixed inset-x-0 bottom-4 z-[900] flex justify-center lg:hidden">
+          <div className="segmented grid-cols-2 bg-slate-900/90! p-1 shadow-lift backdrop-blur dark:bg-slate-800/95!">
+            {(["list", "map"] as const).map((v) => (
+              <button
+                key={v}
+                aria-pressed={view === v}
+                onClick={() => {
+                  setView(v);
+                  document.getElementById("results")?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="px-5! text-slate-300! aria-pressed:text-slate-900! dark:aria-pressed:text-white!"
+              >
+                {v === "list" ? "List" : "Map"}
+              </button>
+            ))}
           </div>
-        )}
-      </section>
-      <footer className="mt-12 text-center text-xs text-slate-400">
-        Times are timetable times (IST). Minimum transfer time 30 minutes. Routing: exact K-best earliest-arrival search in C++.
-      </footer>
+        </div>
+      )}
     </main>
   );
 }

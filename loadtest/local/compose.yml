@@ -1,0 +1,204 @@
+# Local rehearsal of the AWS scaling setup at small scale: 4 single-core engine workers behind the
+# Node dispatcher, nginx in front, Redis, Prometheus + Grafana, exporters, and k6 on demand.
+# Debugs the load-test scripts and dashboards cheaply before any AWS run.
+#
+#   docker compose -f loadtest/local/compose.yml up -d --build
+#   loadtest/local/k6.sh smoke                        # or: load, breakpoint, spike, soak, closed
+#   Grafana http://localhost:3001 (dashboard "Railway scaling"), Prometheus http://localhost:9090,
+#   gateway http://localhost:8090
+#
+# Variant knobs are plain env vars (shell or loadtest/local/.env), e.g.
+#   LB_STRATEGY=p2c CACHE_BACKEND=none docker compose -f loadtest/local/compose.yml up -d api
+#
+# CPU layout for the dev host (i5-12450H: P-cores are HT pairs 0/1, 2/3, 4/5, 6/7; 8-11 are E-cores):
+# workers on 2-5, one each, so w1/w2 and w3/w4 are HT siblings like two workers on one m6i.large;
+# API on 6-7 (one physical core); k6 on the E-cores; infra and monitoring on 0-1 (x-infra).
+# Change the cpusets if the host differs (lscpu -e=CPU,CORE).
+# Bind-mounted services run with SELinux labeling disabled (x-bind, which also pins them to CPUs 0-1),
+# so the repo files need no relabel.
+
+name: railway-loadtest
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "2" }
+
+x-bind: &bind
+  security_opt: ["label=disable"]
+  cpuset: "0,1"
+
+x-worker: &worker
+  build:
+    context: ../..
+    dockerfile: routing-engine/Dockerfile
+  image: railway-routing/engine:latest
+  restart: unless-stopped
+  # One process per core. ENGINE_THREADS stays at its default (8): cpp-httplib parks a thread on
+  # every kept-alive socket, and besides the pool's ENGINE_CONCURRENCY sockets per API process the
+  # health checker and Prometheus hold one each. Threads beyond the core only wait on sockets.
+  environment: &worker-env
+    TOP_K: ${TOP_K:-50}
+    MAX_LABELS: ${MAX_LABELS:-500000}
+  mem_limit: 768m   # RSS settles near 420 MB after heavy queries (per-thread malloc arenas)
+  logging: *logging
+
+services:
+  w1:
+    <<: *worker
+    cpuset: "2"
+    environment: { <<: *worker-env, WORKER_ID: w1 }
+  w2:
+    <<: *worker
+    cpuset: "3"
+    environment: { <<: *worker-env, WORKER_ID: w2 }
+  w3:
+    <<: *worker
+    cpuset: "4"
+    environment: { <<: *worker-env, WORKER_ID: w3 }
+  w4:
+    <<: *worker
+    cpuset: "5"
+    environment: { <<: *worker-env, WORKER_ID: w4 }
+
+  redis:
+    image: redis:7-alpine
+    cpuset: "0,1"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    logging: *logging
+
+  api:
+    build:
+      context: ../..
+      dockerfile: api/Dockerfile
+    image: railway-routing/api:latest
+    restart: unless-stopped
+    cpuset: "6,7"
+    mem_limit: 1g
+    environment:
+      API_PORT: 4000
+      METRICS_PORT: 9464
+      ENGINE_URLS: ${ENGINE_URLS:-http://w1:7070,http://w2:7070,http://w3:7070,http://w4:7070}
+      ENGINE_TIMEOUT_MS: ${ENGINE_TIMEOUT_MS:-5000}
+      ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-2}
+      LB_STRATEGY: ${LB_STRATEGY:-least_outstanding}
+      RETRY_MAX: ${RETRY_MAX:-1}
+      HEDGE_AFTER_MS: ${HEDGE_AFTER_MS:-0}
+      MAX_QUEUE: ${MAX_QUEUE:--1}
+      FAIL_THRESHOLD: ${FAIL_THRESHOLD:-3}
+      HEALTH_INTERVAL_MS: ${HEALTH_INTERVAL_MS:-2000}
+      NODE_CLUSTER: ${NODE_CLUSTER:-1}
+      # Results are cached only in Redis. Prewarm is off by default here so it does not load the
+      # workers or fill the cache before a measurement; PREWARM=true to study it.
+      CACHE_BACKEND: ${CACHE_BACKEND:-redis}
+      CACHE_COALESCE: ${CACHE_COALESCE:-true}
+      PREWARM: ${PREWARM:-false}
+      PREWARM_PAIRS: ${PREWARM_PAIRS:-50}
+      PREWARM_TIMES: ${PREWARM_TIMES:-hourly}
+      PREWARM_DAYS: ${PREWARM_DAYS:-1}
+      PREWARM_CONCURRENCY: ${PREWARM_CONCURRENCY:-2}
+      PREWARM_FILE: ${PREWARM_FILE:-}
+      REDIS_URL: redis://redis:6379
+      REDIS_LOCK_MS: ${REDIS_LOCK_MS:-0}
+      ENGINE_REGISTRY_KEY: ${ENGINE_REGISTRY_KEY:-}
+      MAX_RESULTS: ${TOP_K:-50}
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+    depends_on:
+      w1: { condition: service_healthy }
+      w2: { condition: service_healthy }
+      w3: { condition: service_healthy }
+      w4: { condition: service_healthy }
+    logging: *logging
+
+  nginx:
+    image: nginx:alpine
+    <<: *bind
+    restart: unless-stopped
+    environment:
+      API_SERVERS: ${API_SERVERS:-server api:4000;}
+      GZIP: ${GZIP:-off}
+      NGINX_ENVSUBST_FILTER: "^(API_SERVERS|GZIP)$"
+    volumes:
+      - ../nginx/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports: ["${GATEWAY_PORT:-8090}:80"]
+    depends_on:
+      api: { condition: service_healthy }
+    logging: *logging
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    cpuset: "0,1"
+    command: ["--nginx.scrape-uri=http://nginx/nginx_status"]
+    depends_on: [nginx]
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:latest
+    <<: *bind
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ../prometheus/prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    ports: ["9090:9090"]
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:latest
+    <<: *bind
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/scaling.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    <<: *bind
+    command: ["--path.rootfs=/host"]
+    pid: host
+    volumes: ["/:/host:ro"]
+    logging: *logging
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    cpuset: "0,1"
+    privileged: true
+    command: ["--docker_only=true", "--housekeeping_interval=5s", "--store_container_labels=false", "--whitelisted_container_labels=com.docker.compose.service"]
+    devices: ["/dev/kmsg"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    logging: *logging
+
+  # On demand only (profile): loadtest/local/k6.sh runs it with `docker compose run`.
+  k6:
+    image: grafana/k6:latest
+    <<: *bind
+    profiles: [k6]
+    cpuset: "8-11"
+    environment:
+      BASE_URL: http://nginx
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: "p(50),p(90),p(99),max"
+      K6_PROMETHEUS_RW_PUSH_INTERVAL: 5s
+    volumes:
+      - ..:/loadtest
+    working_dir: /loadtest
+    depends_on: [nginx]
+
+volumes:
+  prom-data:

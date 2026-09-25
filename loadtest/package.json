@@ -1,0 +1,6 @@
+{
+  "name": "railway-loadtest",
+  "private": true,
+  "type": "module",
+  "description": "Load-test tooling for the scaling study. Node scripts run directly (no dependencies); k6 scripts run in the grafana/k6 image."
+}

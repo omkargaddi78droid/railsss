@@ -28,7 +28,7 @@ namespace rail {
 struct RouterConfig {
   int32_t min_transfer_minutes = 30;
   int32_t max_transfers = 10;           // internal cap; legs <= max_transfers + 1
-  int32_t top_k = 20;
+  int32_t top_k = 50;
   // Optional heuristic cap on labels boarding / alighting one train event (0 = off, the exact default).
   // With it on, results are no longer guaranteed to be the exact top-K.
   int32_t k_node = 0;
@@ -36,7 +36,7 @@ struct RouterConfig {
   // Deterministic work budget. Completed journeys are emitted in exact rank order, so hitting the
   // budget never yields a wrong or misordered journey; it can only return fewer than top_k
   // (reported as truncated / search_complete = false).
-  uint32_t max_labels = 200'000;
+  uint32_t max_labels = 500'000;
   // Shortcut dominance (see README): drop a journey when an obviously better journey with the same
   // or earlier arrival and strictly fewer transfers exists:
   //   stay-on:       it leaves a train that itself reaches the destination no later than the journey;

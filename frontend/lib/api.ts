@@ -1,5 +1,8 @@
 import type { ApiError, RouteResponse, StationHit } from "./types";
 
+/** Journeys fetched per search; must not exceed the API's MAX_RESULTS. */
+export const MAX_RESULTS = 50;
+
 // The browser talks to this Next.js app only; app/api/[...path]/route.ts proxies to the API service.
 
 export class RequestError extends Error {
@@ -30,7 +33,7 @@ export async function searchRoutes(input: { source: string; destination: string;
   const res = await fetch("/api/routes", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...input, limit: 20, page: 1 }),
+    body: JSON.stringify({ ...input, limit: MAX_RESULTS, page: 1 }),
   });
   return parse<RouteResponse>(res);
 }

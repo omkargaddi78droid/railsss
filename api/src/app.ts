@@ -16,6 +16,8 @@ export interface AppDeps {
   maxDurationFilterMinutes: number;
   corsOrigin?: string | null;
   mongoStatus?: () => "connected" | "disabled" | "error";
+  // Called once per finished request (Prometheus HTTP histogram); route is the matched pattern.
+  observe?: (method: string, route: string, status: number, seconds: number) => void;
 }
 
 class HttpError extends Error {
@@ -77,6 +79,7 @@ export function createApp(deps: AppDeps) {
     (req as any).id = id;
     res.on("finish", () => {
       const ms = Math.round((performance.now() - start) * 100) / 100;
+      deps.observe?.(req.method, req.route ? req.baseUrl + req.route.path : "unmatched", res.statusCode, ms / 1000);
       logger.info({ req_id: id, method: req.method, path: req.path, status: res.statusCode, ms }, "request");
     });
     if (deps.corsOrigin) {
@@ -148,11 +151,11 @@ export function createApp(deps: AppDeps) {
       return void res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
     }
     if (err instanceof EngineError) {
-      const status = err.kind === "invalid" ? 400 : 503;
-      logger.error({ req_id: (req as any).id, err: err.message }, "engine error");
-      return void res.status(status).json({
-        error: { code: err.kind === "invalid" ? "INVALID_QUERY" : "ENGINE_UNAVAILABLE", message: err.message },
-      });
+      const [status, code] =
+        err.kind === "invalid" ? [400, "INVALID_QUERY"] : err.kind === "overloaded" ? [429, "OVERLOADED"] : [503, "ENGINE_UNAVAILABLE"];
+      if (err.kind === "overloaded") res.set("retry-after", "1");
+      else logger.error({ req_id: (req as any).id, err: err.message }, "engine error");
+      return void res.status(status).json({ error: { code, message: err.message } });
     }
     if ((err as any)?.type === "entity.parse.failed") {
       return void res.status(400).json({ error: { code: "INVALID_JSON", message: "request body is not valid JSON" } });

@@ -1,0 +1,39 @@
+# Gateway: nginx in front of the Node API process(es). Rendered by the nginx image's envsubst
+# (/etc/nginx/templates/*.template -> /etc/nginx/conf.d/).
+#   API_SERVERS  upstream server lines, e.g. "server api:4000;" or several for two gateway instances
+#   GZIP         on|off (E9 payload experiment)
+
+upstream api {
+    ${API_SERVERS}
+    keepalive 128;          # reuse upstream connections; without it every request pays a TCP handshake
+}
+
+server {
+    listen 80 reuseport backlog=4096;
+    access_log off;         # per-request logging is measured by k6 and Prometheus instead
+    client_max_body_size 64k;
+
+    gzip ${GZIP};
+    gzip_types application/json;
+    gzip_min_length 1024;
+    gzip_comp_level 4;
+
+    location / {
+        proxy_pass http://api;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header X-Request-Id $request_id;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 30s;
+    }
+
+    # Connection counters for the nginx exporter; internal networks only.
+    location = /nginx_status {
+        stub_status;
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+    }
+}

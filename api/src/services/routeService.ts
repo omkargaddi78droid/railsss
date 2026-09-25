@@ -30,6 +30,13 @@ export class RouteService {
     this.maxResults = maxResults;
   }
 
+  // Computes one search into the cache (prewarm). Resolves true if it was already cached.
+  async warm(q: { source: string; destination: string; date: string; time: string }, ttlSeconds?: number): Promise<boolean> {
+    const key = RouteCache.key({ ...q, configHash: this.configHash });
+    const r = await this.cache.getOrCompute(key, () => this.engine.route({ ...q, limit: this.maxResults }), ttlSeconds);
+    return r.cached;
+  }
+
   async search(q: RouteSearch) {
     const t0 = performance.now();
     // The engine always computes the full top-N once; limit/page/filters slice that result, so
@@ -73,6 +80,8 @@ export class RouteService {
         search_complete: result.search_complete,
         engine_ms: typeof result.stats?.total_ms === "number" ? Math.round((result.stats.total_ms as number) * 100) / 100 : null,
         api_ms: Math.round((performance.now() - t0) * 100) / 100,
+        // engine process that computed this search (null on a cache hit), for per-worker load analysis
+        worker: cached ? null : (result.worker ?? null),
       },
     };
   }

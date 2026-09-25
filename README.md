@@ -1,20 +1,22 @@
 # Railway Journey Routing
 
-Given a source station, a destination, a date and an earliest start time, return the **20 unique valid
-journeys that arrive earliest**, across any number of transfers (internal cap 10), with a 30-minute
+Given a source station, a destination, a date and an earliest start time, return the **50 unique valid
+journeys that arrive earliest** (the original specification asked for 20; K is configurable), across any number of transfers (internal cap 10), with a 30-minute
 minimum transfer, operating days and multi-day (overnight) schedules honored.
 
 ```
 browser ──► Next.js frontend (:3000, published) ──► Node/Express API (:4000) ──► C++ routing engine (:7070)
                                                          │
+                                                         ├──► Redis (route cache, prewarmed on start)
                                                          └──► MongoDB (station master, trains, ingest reports)
 ```
 
 - **routing-engine/**: C++20 long-running HTTP service. Loads the preprocessed timetable once and answers
   `POST /route` in single-digit to tens of milliseconds.
 - **api/**: Express 5 + zod + pino. Validation, station search, route cache, filters, pagination.
-- **frontend/**: Next.js 16 (App Router), React 19, Tailwind 4. Station autocomplete, results timeline,
-  filters, pagination.
+- **frontend/**: Next.js 16 (App Router), React 19, Tailwind 4, Leaflet. Station autocomplete, results
+  timeline, a route map drawn in the browser from bundled station coordinates, client-side filters and
+  sorting, pagination.
 - **scripts/**: Node/TypeScript preprocessing pipeline: validation, cleaning, quality report, and the
   routing-optimized timetable.
 - **MongoDB**: persistence for stations, trains and ingest reports. Hot routing never touches it.
@@ -50,7 +52,9 @@ so builds work offline.
 
 ```bash
 # 1. preprocess raw JSON -> data/processed/{timetable,stations,trains}.json + data/reports/quality-report.{json,md}
-cd scripts && node preprocess.ts && cd ..
+cd scripts && node preprocess.ts
+#    station coordinates for the map -> frontend/public/station-coords.json (committed; rerun after preprocess)
+node geocode.ts && cd ..
 
 # 2. engine
 cmake -S routing-engine -B routing-engine/build -DCMAKE_BUILD_TYPE=Release
@@ -167,7 +171,7 @@ This covers trains already en route on Q and journeys that continue for several 
 - **Dominance** (exact, see below): a journey is dropped when a strictly better journey exists that does
   not change trains needlessly.
 
-Output: the top K = 20 journeys, or fewer if fewer exist.
+Output: the top K = 50 journeys (`TOP_K`), or fewer if fewer exist.
 
 ---
 
@@ -176,7 +180,7 @@ Output: the top K = 20 journeys, or fewer if fewer exist.
 Why not the textbook algorithms:
 
 - **Dijkstra, CSA and RAPTOR** compute one earliest arrival, or a Pareto set over (arrival, transfers).
-  They cannot produce the 20 best distinct journeys.
+  They cannot produce the K best distinct journeys.
 - **Yen's K-shortest paths on a time-expanded graph** needs a graph with about 60k event nodes per day and
   K rounds of spur searches, each a full shortest-path run. That is too slow for interactive use, and the
   "no repeated station" rule does not map cleanly to Yen's node removals.
@@ -225,12 +229,12 @@ arena with parent pointers. The priority key is
 - A label whose bound is infinite, exceeds the horizon, or exceeds the transfer cap is never created.
 
 When a completed journey is popped, it is final (see Correctness). It is dropped if its signature was
-already emitted or if a dominance rule applies. The search stops after 20 accepted completions.
+already emitted or if a dominance rule applies. The search stops after K accepted completions.
 
 ### 4. Dominance rules (exact)
 
 These rules only remove a journey J when a **strictly better valid** journey J′ is guaranteed to exist.
-J′ arrives no later, departs no earlier, has fewer transfers and is loop-free, so the top-20 never contains
+J′ arrives no later, departs no earlier, has fewer transfers and is loop-free, so the top-K never contains
 pointless train changes:
 
 - **Stay-on** (applied during the search): J alights from train X, but X itself reaches the destination
@@ -246,12 +250,13 @@ brought no speedup once the profile bound was in place.
 
 ### 5. Budgets
 
-- `MAX_LABELS` (default 200,000) is a deterministic per-query work budget. Completed journeys are still
+- `MAX_LABELS` (default 500,000) is a deterministic per-query work budget. Completed journeys are still
   popped in exact rank order, so hitting the budget never returns a wrong or misordered journey. It can
-  only return **fewer than 20**, and it reports `search_complete: false`. This happens for about 1.5 % of
-  random station pairs.
+  only return **fewer than K**, and it reports `search_complete: false`. At K = 50 this happens for
+  about 2.4 % of random queries (it was 1.5 % at K = 20 with a 200,000 budget; keeping 200,000 at K = 50
+  would raise it to about 4.4 %).
 - `K_NODE` (default 0 = off) optionally caps labels per train event. It is a heuristic: when it is
-  enabled, the result is no longer guaranteed to be the exact top-20.
+  enabled, the result is no longer guaranteed to be the exact top-K.
 
 ---
 
@@ -296,7 +301,7 @@ Returns 200 when healthy and 503 otherwise:
 ```json
 { "status": "healthy",
   "checks": { "engine": "up", "stations": { "count": 2894, "source": "mongodb" }, "mongo": "connected" },
-  "engine": { "load_ms": 364, "requests": 0, "config": { "min_transfer_minutes": 30, "top_k": 20, "...": "..." } } }
+  "engine": { "load_ms": 364, "requests": 0, "config": { "min_transfer_minutes": 30, "top_k": 50, "...": "..." } } }
 ```
 
 ### `GET /api/stations?q=<prefix>&limit=10`
@@ -318,7 +323,7 @@ prefix, then by `train_count`.
   "filters": { "max_duration_minutes": 2000, "max_transfers": 2, "direct_only": false } }
 ```
 
-The schema is strict: unknown fields are rejected. `limit` is 1–20 (default 20). `max_duration_minutes`
+The schema is strict: unknown fields are rejected. `limit` is 1–`MAX_RESULTS` (default and maximum 50). `max_duration_minutes`
 is ≤ 3000.
 
 Response:
@@ -353,12 +358,12 @@ Response:
     ]
   }],
   "filters_applied": {},
-  "pagination": { "page": 1, "limit": 5, "returned": 5, "total_available": 20, "total_unfiltered": 20, "total_pages": 4, "max_results": 20 },
+  "pagination": { "page": 1, "limit": 5, "returned": 5, "total_available": 50, "total_unfiltered": 50, "total_pages": 10, "max_results": 50 },
   "meta": { "cached": false, "search_complete": true, "engine_ms": 10.2, "api_ms": 21.4 }
 }
 ```
 
-The engine always computes the full top-20 once. That result is cached, and `limit`, `page` and `filters`
+The engine always computes the full top-50 once. That result is cached, and `limit`, `page` and `filters`
 only slice it, so paging or toggling filters never triggers a second routing run. Ranks refer to the
 unfiltered ranking, so they stay stable while filters change.
 
@@ -373,8 +378,14 @@ unfiltered ranking, so they stay stable while filters change.
 
 ### API internals
 
-- **Route cache**: an LRU with TTL. The key is `src|dst|date|time|engine-config-hash`, and the cache
-  **coalesces in-flight requests**: concurrent identical queries share one engine call.
+- **Route cache**: Redis only (nothing is cached in API memory), shared by every API process. Values are
+  brotli-compressed JSON (a ~270 KB result becomes ~8 KB) with a TTL. The key is
+  `src|dst|date|time|engine-config-hash`. Concurrent identical queries in one process share one engine call
+  (in-flight coalescing). Redis errors fail open: the search is computed and not cached.
+- **Cache prewarm**: on startup the API computes the busiest `PREWARM_PAIRS` station pairs at every hour of
+  today (the frontend's default time is the current hour, and the current hour goes first) into Redis, in
+  the background with `PREWARM_CONCURRENCY` searches at a time. A Redis lock lets one process do it;
+  entries already in Redis are skipped, so every restart re-runs it cheaply.
 - **Engine client**: keep-alive `fetch`, a timeout that covers queueing as well as the call, and a FIFO
   semaphore (`ENGINE_CONCURRENCY`). The semaphore matters because cpp-httplib holds a worker thread for
   each open keep-alive connection. Without it, a burst opens more sockets than the engine has threads, and
@@ -388,20 +399,48 @@ unfiltered ranking, so they stay stable while filters change.
 
 ## Frontend
 
-Next.js App Router. `app/page.tsx` is a client component. Its URL state (`?from&to&date&time`) makes
-searches shareable and supports the back button.
+Next.js App Router. `app/page.tsx` is a client component. Its URL state (`?from&to&date&time` plus the
+filters and sort, e.g. `&via=NGP&vmode=must&sort=duration`) makes searches shareable and supports the
+back button.
 
 - `components/StationPicker`: debounced autocomplete against `/api/stations`, with keyboard navigation.
-- `components/SearchForm`: stations, a swap button, date and time.
-- `components/JourneyCard`: summary (departure → arrival, duration, transfers, train chips), a vertical
-  timeline per segment with transfer waits, "+1 day" badges on times after the search date, and
-  expandable intermediate stops.
-- `components/FilterPanel`: direct only, max transfers, and max duration (a slider up to 3000 min). The
-  predicates live in a registry in `lib/filters.ts`. The frontend fetches the top 20 once, then filters
-  and paginates (5 per page) on the client with no extra requests.
+- `components/SearchForm`: stations, a swap button, date (with Today / Tomorrow shortcuts) and time.
+- `components/JourneyCard`: summary (departure → arrival, duration, a to-scale bar of train legs and
+  waits, train chips), and on expand a vertical timeline per segment with transfer waits, "+1 day" badges
+  on times after the search date, expandable intermediate stops, and "Exclude train".
+- `components/SummaryStrip`: best-in-class tiles (earliest arrival, shortest trip, fewest changes, least
+  waiting) over the filtered list; a click selects that journey. `components/SortBar` reorders the top 50
+  by the same keys; the engine rank stays visible as `#n`.
+- `components/FilterPanel`: every predicate lives in a registry in `lib/filters.ts`, and options are
+  derived from the current results with a journey count each:
+  - direct only, max transfers, max duration (a slider up to 3000 min);
+  - **transfer stations**: tick stations and choose *Only via* (every change is at a ticked station;
+    direct journeys still pass), *Must via* (at least one change is) or *Avoid* (none is);
+  - train types allowed on every leg;
+  - departure and arrival time windows (night, morning, afternoon, evening);
+  - minimum time to change trains, and the longest single wait;
+  - excluded trains (added from a card).
+
+  The frontend fetches the top 50 once (`MAX_RESULTS` in `lib/api.ts`), then filters, sorts and
+  paginates (10 per page) on the client with no extra requests. Filters only narrow the top 50; they do not search for journeys outside it.
+- `components/RouteMap` (Leaflet, loaded client-side only through `MapPanel`): the selected journey is
+  drawn through every stop of every leg, one colour per leg (matching the card), with transfer and
+  endpoint markers and stop tooltips; the other journeys are faint dashed lines, and hovering a card
+  lifts its line. Before a search it pins the picked stations. Tiles are Esri's keyless grey canvas
+  (light and dark variants), the only external request.
+- **Station coordinates** come from the [datameet/railways](https://github.com/datameet/railways)
+  station list (CC0, vendored at `data/external/datameet-stations.json`). `scripts/geocode.ts` joins it
+  by code (plus a few hand-checked aliases for recoded stations such as CSMT and MMCT), rejects points
+  that disagree with the timetable's own distances, and fills the gaps by interpolating along train
+  routes by `distance_km`. 2,859 of 2,894 stations (98.8 %) are resolved; the map draws straight past the
+  rest. Details are in `data/reports/geocode-report.md`. The output, `frontend/public/station-coords.json`
+  (about 68 KB), is committed and served statically, so the map never waits on the API.
 - `app/api/[...path]/route.ts`: a same-origin runtime proxy to `API_INTERNAL_URL`. The browser never talks
   to the API directly (no CORS setup is needed), and one image works in every environment.
-- Supports dark mode via `prefers-color-scheme`. The standalone output is the Docker runtime image.
+- Layout: filters, list and a sticky map side by side from 1280 px; below that the filters open as a
+  drawer, and below 1024 px a floating List / Map switch replaces the map column.
+- Supports dark mode via `prefers-color-scheme`, including the map tiles. The standalone output is the
+  Docker runtime image.
 
 ---
 
@@ -433,18 +472,20 @@ All settings come from environment variables. See `.env.example`.
 | | `ENGINE_THREADS` | 8 | HTTP worker threads. One is held per open connection, so keep it above the API's `ENGINE_CONCURRENCY` |
 | | `MIN_TRANSFER_MINUTES` | 30 | Minimum transfer time (≥ 1) |
 | | `MAX_TRANSFERS_INTERNAL` | 10 | Transfer cap |
-| | `TOP_K` | 20 | Results computed |
+| | `TOP_K` | 50 | Results computed (compose sets it explicitly; keep it equal to the API's `MAX_RESULTS`) |
 | | `SEARCH_HORIZON_MINUTES` | 5760 | Arrival must fall within this window |
-| | `MAX_LABELS` | 200000 | Deterministic work budget per query |
+| | `MAX_LABELS` | 500000 | Deterministic work budget per query (about 24 MB of labels per engine thread at the limit) |
 | | `K_NODE` | 0 | Heuristic per-event cap (0 = exact) |
 | | `PRUNE_STAY_ON` / `PRUNE_BOARD_EARLIER` | 1 / 1 | Dominance rules |
 | api | `API_PORT`, `API_HOST` | 4000, `0.0.0.0` | |
 | | `ENGINE_URL` | `http://127.0.0.1:7070` | |
 | | `ENGINE_TIMEOUT_MS` | 5000 | Includes queueing time |
 | | `ENGINE_CONCURRENCY` | 4 | Maximum in-flight engine calls per API instance |
+| | `MAX_RESULTS` | 50 | Journeys computed per search and the maximum `limit`; the engine's `TOP_K` must be at least this |
 | | `MONGODB_URI`, `MONGODB_DB` | unset, `railway` | Mongo is optional outside Docker |
 | | `STATIONS_FILE` | `data/processed/stations.json` | Fallback station master |
-| | `CACHE_ENABLED`, `CACHE_MAX_ENTRIES`, `CACHE_TTL_SECONDS` | true, 1000, 3600 | Each entry holds about 100 KB of parsed results |
+| | `CACHE_ENABLED`, `CACHE_BACKEND`, `REDIS_URL`, `CACHE_TTL_SECONDS` | true, redis, (compose), 3600 | Redis only; about 10 KB per compressed entry |
+| | `PREWARM`, `PREWARM_PAIRS`, `PREWARM_TIMES`, `PREWARM_DAYS`, `PREWARM_TZ`, `PREWARM_CONCURRENCY`, `PREWARM_TTL_SECONDS`, `PREWARM_FILE` | true, 50, hourly, 1, Asia/Kolkata, 2, (days+1)×86400, none | Startup warm-up of the Redis cache |
 | | `CORS_ORIGIN`, `LOG_LEVEL` | unset, `info` | |
 | frontend | `API_INTERNAL_URL` | `http://127.0.0.1:4000` | Proxy target |
 | compose | `PUBLIC_PORT` | 80 | Published frontend port |
@@ -462,11 +503,12 @@ All settings come from environment variables. See `.env.example`.
 - `engine`: a multi-stage build. Stage 1 preprocesses the raw data, stage 2 compiles **and runs
   `engine_tests`** (so a failing test fails the image build), and stage 3 is a slim Debian runtime with a
   non-root user.
+- `redis`: `redis:7-alpine`, the route cache. No persistence, `REDIS_MAXMEMORY` (256mb) with LRU eviction.
 - `seed`: a one-shot job using the API image. It runs after Mongo is healthy.
-- `api`: starts after the engine is healthy and the seed has completed successfully. Node 24 Alpine,
+- `api`: starts after the engine and Redis are healthy and the seed has completed successfully. Node 24 Alpine,
   non-root.
 - `frontend`: the Next.js standalone server. It is the only published port.
-- Networks: `backend` (mongo, engine, api) and `frontend` (api, frontend).
+- Networks: `backend` (mongo, redis, engine, api) and `frontend` (api, frontend).
 - Every service has a healthcheck, `restart: unless-stopped`, and rotated json-file logs (10 MB × 5).
 
 ### AWS EC2
@@ -510,9 +552,13 @@ on 2026-09-25, and about 70 % of the pairs have at least one route.
 | Metric | Value |
 |---|---|
 | Timetable load + pattern build | 100–360 ms (364 ms inside Docker) |
-| p50 / p90 / p95 / p99 / max | 7.3 / 15.6 / 23.5 / ~100 / ~170 ms |
-| Budget hit (`search_complete=false`) | ~1.5 % of queries |
-| BD → NDLS, 2026-09-25 10:00 | 20 routes in ~10 ms |
+| p50 / p90 / p95 / p99 / max, K = 50, budget 500k | 7.5 / 28.3 / 59.6 / 201 / 267 ms |
+| Budget hit (`search_complete=false`), K = 50 | 2.4 % of queries |
+| BD → NDLS, 2026-09-25 10:00, K = 50 | 50 routes in ~15 ms |
+| For reference, K = 20, budget 200k | p50 / p90 / p95 / p99 7.3 / 15.6 / 23.5 / ~100 ms; 1.5 % budget hits |
+
+The end-to-end numbers below were measured at K = 20; at K = 50 the response is about 2.5 times larger,
+and BD → NDLS measured `api_ms` 41 uncached through the proxy.
 
 ### End to end (`npm run bench` in `api/`, autocannon, 20 s runs)
 
@@ -560,9 +606,9 @@ cd api && npm run bench -- --mode cold --connections 10 --duration 20 --url http
 
 | Suite | Command | What it covers |
 |---|---|---|
-| Preprocessing (9 tests) | `cd scripts && npm test` | Overnight rule (including KUR 23:45/00:05 doj 2), code recovery, name canonicalization, policies |
+| Preprocessing and geocoding (15 tests) | `cd scripts && npm test` | Overnight rule (including KUR 23:45/00:05 doj 2), code recovery, name canonicalization, policies; coordinate interpolation and the outlier guard |
 | Engine (25 cases, about 258k assertions) | `routing-engine/build/engine_tests` | See below |
-| API (10 tests) | `cd api && npm test` | Validation and error codes, pagination, filters, cache and coalescing, no-route message, engine-down 503, semaphore |
+| API (30 tests) | `cd api && npm test` | Validation and error codes, pagination, filters, Redis cache, prewarm, coalescing, pool strategies, no-route message, engine-down 503, semaphore |
 | Types | `cd api && npx tsc --noEmit` | |
 | Frontend build | `cd frontend && npx next build` | Type check and build |
 
@@ -591,16 +637,18 @@ The engine suites are:
 
 ## Known limitations
 
-- **Work budget**: about 1.5 % of random queries (typically distant, poorly connected pairs) hit
-  `MAX_LABELS` and return fewer than 20 journeys. The results returned are still exact and in rank order,
+- **Work budget**: about 2.4 % of random queries (typically distant, poorly connected pairs) hit
+  `MAX_LABELS` and return fewer than 50 journeys. The results returned are still exact and in rank order,
   and the response is flagged `search_complete: false`. Raising the budget trades latency for
   completeness.
 - **Time zone**: naive IST, with no DST handling (none is needed in India).
 - No platform, fare or seat-availability data. `platform` is always null in the source data.
 - The minimum transfer is one global value, not per station.
+- The map's station positions are approximate for the 110 interpolated stations, and 35 small stations
+  have no position. Codes the raw data reuses for two stations (BPR, MGR) draw a visible jump.
 - `K_NODE > 0` makes the search approximate. It is off by default.
-- The route cache is per API process, and each entry costs about 100 KB of memory. Size
-  `CACHE_MAX_ENTRIES` to the host.
+- The cache key does not include a timetable version. Redis outlives API and engine restarts, so after
+  loading a new timetable, flush Redis (`docker compose exec redis redis-cli FLUSHALL`).
 
 ## Future work
 
@@ -609,6 +657,6 @@ The engine suites are:
   the engine's bytes through the API without re-serializing.
 - Caching backward profiles per (destination, date window), which is reusable across sources.
 - RAPTOR-style round pruning to shrink the label space for long-distance pairs.
-- Horizontal scaling: engine replicas behind the API (they are stateless), and a shared cache (e.g.
-  Redis) across API instances.
+- Horizontal scaling: engine replicas behind the API (they are stateless). The Redis cache is already
+  shared across API instances.
 - Per-station minimum transfer times, if such data becomes available.

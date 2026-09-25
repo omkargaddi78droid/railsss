@@ -61,6 +61,10 @@ export class StationService {
     return this.byCode.size;
   }
 
+  all(): Station[] {
+    return [...this.byCode.values()];
+  }
+
   get(code: string): Station | undefined {
     return this.byCode.get(code.trim().toUpperCase());
   }

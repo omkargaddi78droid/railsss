@@ -1,6 +1,7 @@
 // Long-running routing service. Loads the processed timetable once, then answers
-//   POST /route   {"source":"BD","destination":"NDLS","date":"2026-09-25","time":"10:00","limit":20}
+//   POST /route   {"source":"BD","destination":"NDLS","date":"2026-09-25","time":"10:00","limit":50}
 //   GET  /health
+//   GET  /metrics  (Prometheus text format)
 // Configuration comes from environment variables (see .env.example).
 
 #include <atomic>
@@ -13,6 +14,7 @@
 #include "civil_time.h"
 #include "httplib.h"
 #include "journey_json.h"
+#include "metrics.h"
 #include "router.h"
 
 using nlohmann::json;
@@ -69,6 +71,8 @@ int main() {
   // cpp-httplib holds a pool thread per open (keep-alive) connection, so this must exceed the
   // number of concurrent client connections (the API caps its own at ENGINE_CONCURRENCY).
   const int threads = env_int("ENGINE_THREADS", 8);
+  // Identifies this process when many workers sit behind one dispatcher (logs, metrics, responses).
+  const std::string worker_id = env_str("WORKER_ID", "engine");
 
   rail::Timetable tt;
   try {
@@ -90,6 +94,7 @@ int main() {
 
   std::atomic<uint64_t> requests{0}, errors{0};
   std::atomic<uint64_t> total_route_us{0};
+  rail::EngineMetrics metrics;
 
   httplib::Server srv;
   srv.new_task_queue = [threads] { return new httplib::ThreadPool(static_cast<size_t>(threads)); };
@@ -101,6 +106,7 @@ int main() {
     const uint64_t n = requests.load();
     reply(res, 200,
           {{"status", "ok"},
+           {"worker", worker_id},
            {"stations", tt.stations.size()},
            {"trains", tt.trains.size()},
            {"load_ms", load_ms},
@@ -110,13 +116,23 @@ int main() {
            {"config", rail::config_to_json(router.config())}});
   });
 
+  srv.Get("/metrics", [&](const httplib::Request&, httplib::Response& res) {
+    res.set_content(metrics.render(worker_id), "text/plain; version=0.0.4");
+  });
+
   srv.Post("/route", [&](const httplib::Request& req, httplib::Response& res) {
     const double start = now_ms();
+    metrics.in_flight.fetch_add(1, std::memory_order_relaxed);
+    struct InFlight {
+      rail::EngineMetrics& m;
+      ~InFlight() { m.in_flight.fetch_sub(1, std::memory_order_relaxed); }
+    } in_flight_guard{metrics};
     json body;
     try {
       body = json::parse(req.body);
     } catch (...) {
       ++errors;
+      ++metrics.requests_invalid;
       return reply(res, 400, {{"status", "invalid"}, {"error", "body is not valid JSON"}});
     }
     auto str = [&](const char* k) { return body.contains(k) && body[k].is_string() ? body[k].get<std::string>() : std::string(); };
@@ -127,6 +143,7 @@ int main() {
     const auto tm = rail::parse_hhmm(str("time"));
     if (q.source < 0 || q.destination < 0 || !day || !tm) {
       ++errors;
+      ++metrics.requests_invalid;
       return reply(res, 400,
                    {{"status", "invalid"},
                     {"error", q.source < 0 ? "unknown source station"
@@ -141,14 +158,23 @@ int main() {
     const rail::RouteResult r = router.route(q);
     if (r.status == rail::RouteStatus::InvalidQuery) {
       ++errors;
+      ++metrics.requests_invalid;
       return reply(res, 400, {{"status", "invalid"}, {"error", r.error}});
     }
     json out = rail::result_to_json(tt, q, r);
+    out["worker"] = worker_id;
     ++requests;
     total_route_us += static_cast<uint64_t>(r.stats.total_ms * 1000);
     reply(res, 200, out);
+    ++(r.status == rail::RouteStatus::Ok ? metrics.requests_ok : metrics.requests_no_route);
+    if (r.stats.truncated) ++metrics.budget_hits;
+    metrics.labels_popped += r.stats.labels_popped;
+    metrics.response_bytes += res.body.size();
+    metrics.route_seconds.observe(r.stats.total_ms / 1000.0);
+    metrics.handler_seconds.observe((now_ms() - start) / 1000.0);
     log_line({{"level", "info"},
               {"msg", "route"},
+              {"worker", worker_id},
               {"source", str("source")},
               {"destination", str("destination")},
               {"date", str("date")},
@@ -162,6 +188,7 @@ int main() {
 
   srv.set_exception_handler([&](const httplib::Request&, httplib::Response& res, std::exception_ptr ep) {
     ++errors;
+    ++metrics.requests_error;
     std::string what = "internal error";
     try {
       if (ep) std::rethrow_exception(ep);
@@ -173,7 +200,7 @@ int main() {
     reply(res, 500, {{"status", "error"}, {"error", "internal error"}});
   });
 
-  log_line({{"level", "info"}, {"msg", "listening"}, {"host", host}, {"port", port}, {"threads", threads}});
+  log_line({{"level", "info"}, {"msg", "listening"}, {"host", host}, {"port", port}, {"threads", threads}, {"worker", worker_id}});
   if (!srv.listen(host, port)) {
     log_line({{"level", "fatal"}, {"msg", "failed to bind"}, {"host", host}, {"port", port}});
     return 1;
