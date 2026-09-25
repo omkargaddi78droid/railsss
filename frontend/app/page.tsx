@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FilterPanel } from "@/components/FilterPanel";
+import { FilterBar } from "@/components/FilterBar";
 import { JourneyCard } from "@/components/JourneyCard";
 import { MapPanel } from "@/components/MapPanel";
 import { SearchForm, type SearchInput } from "@/components/SearchForm";
@@ -9,9 +9,7 @@ import { SortBar } from "@/components/SortBar";
 import { highlightBadges, SummaryStrip } from "@/components/SummaryStrip";
 import { MAX_RESULTS, RequestError, searchRoutes } from "@/lib/api";
 import {
-  activeFilterCount,
   applyFilters,
-  deriveOptions,
   FILTER_DEFAULTS,
   filtersFromParams,
   filtersToParams,
@@ -41,7 +39,6 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "map">("list"); // below lg only
-  const [filtersOpen, setFiltersOpen] = useState(false); // below xl only
   const [draft, setDraft] = useState<{ from: StationHit | null; to: StationHit | null }>({ from: null, to: null });
   const lastSearch = useRef<Search | null>(null);
 
@@ -51,8 +48,8 @@ export default function Home() {
     setPage(1);
     setSelectedId(null);
     setDraft({ from: v.from, to: v.to });
-    // A new search from the form drops the filters tied to the old results (stations, trains).
-    if (opts.fresh) setFilters((f) => ({ ...f, viaStations: [], excludedTrains: [] }));
+    // A new search from the form drops the filter tied to the old results (excluded trains).
+    if (opts.fresh) setFilters((f) => ({ ...f, excludedTrains: [] }));
     try {
       const data = await searchRoutes({ source: v.from.code, destination: v.to.code, date: v.date, time: v.time });
       setState({ kind: "done", data });
@@ -103,13 +100,11 @@ export default function Home() {
   }, [filters, sort, state.kind]);
 
   const all = useMemo(() => (state.kind === "done" ? state.data.routes : []), [state]);
-  const options = useMemo(() => deriveOptions(all), [all]);
   const filtered = useMemo(() => applyFilters(all, filters), [all, filters]);
   const sorted = useMemo(() => sortJourneys(filtered, sort), [filtered, sort]);
   const badges = useMemo(() => highlightBadges(filtered), [filtered]);
   const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const shown = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const nFilters = activeFilterCount(filters);
 
   useEffect(() => setPage(1), [filters, sort]);
   // Keep a journey selected for the map: the first one, unless the current pick is still listed.
@@ -195,25 +190,7 @@ export default function Home() {
           </div>
         )}
 
-        <div id="results" className={`mt-4 grid scroll-mt-4 gap-5 ${done ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[290px_minmax(0,1fr)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]"}`}>
-          {done && (
-            <>
-              {filtersOpen && <div className="fixed inset-0 z-[1000] bg-slate-950/40 backdrop-blur-sm xl:hidden" onClick={() => setFiltersOpen(false)} aria-hidden />}
-              <div
-                className={`scroll-thin fixed inset-y-0 left-0 z-[1001] w-[330px] max-w-[88vw] overflow-y-auto bg-slate-50 p-3 shadow-2xl transition-transform duration-300 dark:bg-slate-950 xl:sticky xl:top-4 xl:z-auto xl:max-h-[calc(100vh-2rem)] xl:w-auto xl:max-w-none xl:translate-x-0 xl:self-start xl:bg-transparent xl:p-0 xl:shadow-none dark:xl:bg-transparent ${
-                  filtersOpen ? "translate-x-0" : "-translate-x-full"
-                }`}
-              >
-                <div className="mb-2 flex justify-end xl:hidden">
-                  <button className="toggle" onClick={() => setFiltersOpen(false)}>
-                    Done
-                  </button>
-                </div>
-                <FilterPanel value={filters} onChange={setFilters} options={options} total={all.length} shown={filtered.length} />
-              </div>
-            </>
-          )}
-
+        <div id="results" className={`mt-4 grid scroll-mt-4 gap-5 ${done ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]"}`}>
           {/* list column */}
           <section className={`min-w-0 space-y-3 ${view === "map" ? "hidden lg:block" : ""}`} aria-live="polite">
             {state.kind === "idle" && (
@@ -223,7 +200,7 @@ export default function Home() {
                   {[
                     ["Pick two stations", "Type a name or a code. The map pins them as you go."],
                     ["Search", "The engine finds the 50 earliest-arriving journeys, with up to 10 changes of train and at least 30 minutes to change."],
-                    ["Narrow it down", "Choose where you are happy to change trains, which train types, times of day and how long you will wait."],
+                    ["Narrow it down", "Direct trains only, fewer changes, enough time to change trains, no long waits, or leave out a train."],
                   ].map(([t, d], i) => (
                     <li key={t} className="flex gap-3">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
@@ -252,13 +229,8 @@ export default function Home() {
             )}
             {done && (
               <>
+                {all.length > 0 && <FilterBar value={filters} onChange={setFilters} />}
                 <div className="flex flex-wrap items-center gap-2">
-                  <button className="toggle xl:hidden" aria-pressed={nFilters > 0} onClick={() => setFiltersOpen(true)}>
-                    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
-                      <path d="M3 5a1 1 0 0 1 1-1h12a1 1 0 0 1 .8 1.6L12 11.3V16a1 1 0 0 1-1.4.9l-2-1A1 1 0 0 1 8 15v-3.7L3.2 5.6A1 1 0 0 1 3 5Z" />
-                    </svg>
-                    Filters{nFilters > 0 && ` (${nFilters})`}
-                  </button>
                   <span className="text-xs text-slate-500">
                     {filtered.length} of {all.length} journeys
                   </span>

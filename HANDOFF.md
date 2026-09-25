@@ -7,7 +7,7 @@ Read this first in a new session.
 > credentials/terraform here). Next, in order:
 > 1. The AWS runs (the user runs them): `deploy.sh smoke` + `k6.sh smoke` first (first real test of `deploy/`),
 >    then `node loadtest/run.ts E1`; CAPACITY for the later experiments comes from E1 w16.
-> 2. Step 7 `loadtest/analyze.ts` (user wants it **and** the LLM prompt; T1 docs are DONE), T2 frontend changes.
+> 2. Step 7 `loadtest/analyze.ts` (user wants it **and** the LLM prompt). T1 docs and T2 frontend are DONE.
 > Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
 > which is normal); the rehearsal stack is stopped. Step 5 is committed (`b9d5020`, pushed to `origin`,
 > github.com/omkargaddi78droid/railsss); Step 6 is committed and pushed (`0b33dfa`); T1 (session 8) is committed and pushed too.
@@ -539,7 +539,19 @@ script writing SVG+PNG, README), and `loadtest/pack.ts` (zip with `manifest.json
 `run.ts` gained `--suffix s` (results as `<variant>-<s>`, so a rerun with other overrides is neither skipped
 nor overwrites; used for E8/E17 capacity re-measurement). Open question left in the prompt: whether k6's
 remote-write trend gauges are cumulative; the prompt tells the LLM to check and prefer `api_latency_p99`.
-T2 is not started.
+**T2 DONE (session 8):** filters reduced to direct only / max changes / min change / max wait / excluded
+trains (`lib/filters.ts`; `deriveOptions`, time windows, via stations, train types, max duration and their URL
+keys gone); `components/FilterPanel.tsx` replaced by `components/FilterBar.tsx`, a one-row wrapping bar above
+the list; `app/page.tsx` is two equal columns (list, map) at lg, no filter drawer. Map (`RouteMap.tsx`):
+selected journey smoothed with centripetal Catmull-Rom through its stops (`lib/geo.ts` `smoothPath`), per leg a
+soft glow + casing + leg colour + animated white dash in the direction of travel (`.route-flow` in
+`globals.css`, off under prefers-reduced-motion), leg hover widens it and dims the others (tooltip shows train and
+times), halting stops ringed vs pass-through dots, transfer marker = ring in arriving leg colour + core in
+departing leg colour, other journeys dotted with round caps and lifted on map hover too. Verified: `tsc`,
+`next build`, `docker compose build frontend` (running on :8080), headless Chromium screenshots (docker
+`zenika/alpine-chrome`, `--blink-settings=preferredColorScheme=0|1`, URL `host.docker.internal:8080/?from=NDLS&to=MMCT…`)
+at 1440 light/dark and 390: filter bar is one row at 1440, three rows at 390. The Chrome extension was not
+connected; headless shots sometimes catch the map mid-zoom. Committed and pushed.
 
 Do these after the compute-only plan above, or earlier if the user asks. The user's wording is quoted where it matters.
 

@@ -5,7 +5,7 @@
 import "leaflet/dist/leaflet.css";
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CircleMarker, MapContainer, Pane, Polyline, TileLayer, Tooltip, useMap, ZoomControl } from "react-leaflet";
-import { boundsOf, INDIA_CENTER, journeyPaths, loadCoords, type Coords, type LatLon } from "@/lib/geo";
+import { boundsOf, INDIA_CENTER, journeyPaths, loadCoords, smoothPath, type Coords, type LatLon } from "@/lib/geo";
 import { hhmm, stationLabel } from "@/lib/format";
 import { legColor } from "@/lib/palette";
 import type { Journey, StationHit } from "@/lib/types";
@@ -105,8 +105,17 @@ export default function RouteMap({ journeys, selectedId, hoverId, onSelect, endp
     return boundsOf([from?.p, to?.p].filter((p): p is LatLon => !!p));
   }, [coords, selected, fitAll, journeys, paths, from?.p, to?.p]);
 
+  // The selected journey is drawn as smooth curves through its stops (the others stay plain: 50
+  // journeys × every stop would be a lot of points for faint background lines).
+  const selectedPaths = useMemo(() => (selected ? (paths.get(selected.id) ?? []).map((l) => smoothPath(l)) : []), [selected, paths]);
+  const [mapHoverId, setMapHoverId] = useState<string | null>(null);
+  const [hoverLeg, setHoverLeg] = useState<number | null>(null);
+  useEffect(() => setHoverLeg(null), [selectedId]);
+
   const others = journeys.filter((j) => j.id !== selectedId);
   const muted = dark ? "#64748b" : "#94a3b8";
+  const casing = dark ? "#0f172a" : "#ffffff";
+  const round = { lineCap: "round", lineJoin: "round" } as const;
 
   return (
     <MapContainer center={INDIA_CENTER} zoom={5} minZoom={4} maxZoom={13} zoomSnap={0.25} className="h-full w-full" zoomControl={false}>
@@ -117,31 +126,58 @@ export default function RouteMap({ journeys, selectedId, hoverId, onSelect, endp
       </Pane>
       <ViewController bounds={bounds} topPad={selected && !fitAll ? 56 + 20 * selected.segments.length : 56} />
 
-      {/* the other journeys, faint; hover in the list lifts one */}
+      {/* the other journeys, faint; hovering one here or in the list lifts it */}
       {others.map((j) => {
-        const hot = j.id === hoverId;
+        const hot = j.id === hoverId || j.id === mapHoverId;
         return (paths.get(j.id) ?? []).map((line, i) => (
-          <Polyline
-            key={`${j.id}-${i}-${hot}`}
-            positions={line}
-            pathOptions={{ color: hot ? "#6366f1" : muted, weight: hot ? 4 : 2.5, opacity: hot ? 0.95 : 0.35, dashArray: hot ? undefined : "4 6" }}
-            eventHandlers={{ click: () => onSelect(j.id) }}
-          />
+          <Fragment key={`${j.id}-${i}-${hot}`}>
+            {hot && <Polyline positions={line} pathOptions={{ ...round, color: casing, weight: 8, opacity: 0.85 }} interactive={false} />}
+            <Polyline
+              positions={line}
+              pathOptions={{ ...round, color: hot ? "#6366f1" : muted, weight: hot ? 4 : 2.5, opacity: hot ? 0.95 : 0.35, dashArray: hot ? undefined : "1 7" }}
+              eventHandlers={{
+                click: () => onSelect(j.id),
+                mouseover: () => setMapHoverId(j.id),
+                mouseout: () => setMapHoverId((h) => (h === j.id ? null : h)),
+              }}
+            />
+          </Fragment>
         ));
       })}
 
-      {/* the selected journey: a light casing under each coloured leg */}
+      {/* the selected journey, per leg: a soft glow, a casing, the leg colour, and a moving dash that
+          shows the direction of travel; hovering a leg widens it */}
       {selected &&
-        (paths.get(selected.id) ?? []).map((line, i) => (
-          <Fragment key={`${selected.id}-${i}`}>
-            <Polyline positions={line} pathOptions={{ color: dark ? "#0f172a" : "#ffffff", weight: 8, opacity: 0.9 }} interactive={false} />
-            <Polyline positions={line} pathOptions={{ color: legColor(i), weight: 4.5, opacity: 1, lineJoin: "round" }}>
-              <Tooltip sticky className="stop-tip">
-                {selected.segments[i].train_number} {selected.segments[i].train_name}
-              </Tooltip>
-            </Polyline>
-          </Fragment>
-        ))}
+        selectedPaths.map((line, i) => {
+          const hot = hoverLeg === i;
+          const dim = hoverLeg !== null && !hot;
+          return (
+            <Fragment key={`${selected.id}-${i}-${hot}-${dim}`}>
+              <Polyline positions={line} pathOptions={{ ...round, color: legColor(i), weight: hot ? 20 : 14, opacity: dim ? 0.06 : 0.16 }} interactive={false} />
+              <Polyline positions={line} pathOptions={{ ...round, color: casing, weight: hot ? 11 : 9, opacity: 0.95 }} interactive={false} />
+              <Polyline
+                positions={line}
+                pathOptions={{ ...round, color: legColor(i), weight: hot ? 7 : 5, opacity: dim ? 0.55 : 1 }}
+                eventHandlers={{ mouseover: () => setHoverLeg(i), mouseout: () => setHoverLeg((h) => (h === i ? null : h)) }}
+              >
+                <Tooltip sticky className="stop-tip">
+                  <div className="font-semibold">
+                    {selected.segments[i].train_number} {selected.segments[i].train_name}
+                  </div>
+                  <div className="tabular opacity-80">
+                    {selected.segments[i].from_station.code} {hhmm(selected.segments[i].departure_datetime)} → {selected.segments[i].to_station.code}{" "}
+                    {hhmm(selected.segments[i].arrival_datetime)}
+                  </div>
+                </Tooltip>
+              </Polyline>
+              <Polyline
+                positions={line}
+                pathOptions={{ ...round, color: "#ffffff", weight: hot ? 2.5 : 2, opacity: dim ? 0.3 : 0.85, dashArray: "1 13", className: "route-flow" }}
+                interactive={false}
+              />
+            </Fragment>
+          );
+        })}
 
       {/* intermediate stops of the selected journey */}
       {selected &&
@@ -150,12 +186,17 @@ export default function RouteMap({ journeys, selectedId, hoverId, onSelect, endp
           seg.stops.slice(1, -1).map((s, k) => {
             const p = s.code ? coords[s.code] : undefined;
             if (!p) return null;
+            // stops where the train halts get a ring; pass-through points only a small dot
             return (
               <CircleMarker
                 key={`${i}-${k}`}
                 center={p}
-                radius={3}
-                pathOptions={{ color: legColor(i), weight: 1.5, fillColor: dark ? "#0f172a" : "#ffffff", fillOpacity: 1 }}
+                radius={s.boardable ? 3.5 : 2}
+                pathOptions={
+                  s.boardable
+                    ? { color: legColor(i), weight: 2, fillColor: casing, fillOpacity: 1 }
+                    : { color: legColor(i), weight: 0, fillColor: legColor(i), fillOpacity: 0.7 }
+                }
               >
                 <Tooltip className="stop-tip" direction="top" offset={[0, -4]}>
                   <div className="font-semibold">{stationLabel(s)}</div>
@@ -175,13 +216,17 @@ export default function RouteMap({ journeys, selectedId, hoverId, onSelect, endp
         selected.transfers.map((t, i) => {
           const p = t.station.code ? coords[t.station.code] : undefined;
           if (!p) return null;
+          // a change of train: ring in the arriving leg's colour, core in the departing leg's
           return (
-            <CircleMarker key={`t${i}`} center={p} radius={7} pathOptions={{ color: legColor(i + 1), weight: 3, fillColor: "#ffffff", fillOpacity: 1 }}>
-              {/* Leaflet binds one tooltip per layer, so the label carries the wait too */}
-              <Tooltip permanent direction="right" offset={[8, 0]} className="code-tip">
-                {t.station.code} <span className="font-sans font-medium opacity-70">{t.wait_minutes}m</span>
-              </Tooltip>
-            </CircleMarker>
+            <Fragment key={`t${i}`}>
+              <CircleMarker center={p} radius={9} pathOptions={{ color: legColor(i), weight: 3.5, fillColor: casing, fillOpacity: 1 }}>
+                {/* Leaflet binds one tooltip per layer, so the label carries the wait too */}
+                <Tooltip permanent direction="right" offset={[10, 0]} className="code-tip">
+                  {t.station.code} <span className="font-sans font-medium opacity-70">{t.wait_minutes}m</span>
+                </Tooltip>
+              </CircleMarker>
+              <CircleMarker center={p} radius={4} pathOptions={{ color: legColor(i + 1), weight: 0, fillColor: legColor(i + 1), fillOpacity: 1 }} interactive={false} />
+            </Fragment>
           );
         })}
 
@@ -199,7 +244,7 @@ export default function RouteMap({ journeys, selectedId, hoverId, onSelect, endp
         ) : null,
       )}
       {!selected && from && to && journeys.length === 0 && (
-        <Polyline positions={[from.p, to.p]} pathOptions={{ color: "#6366f1", weight: 2, dashArray: "6 8", opacity: 0.7 }} interactive={false} />
+        <Polyline positions={[from.p, to.p]} pathOptions={{ ...round, color: "#6366f1", weight: 2, dashArray: "6 8", opacity: 0.7 }} interactive={false} />
       )}
     </MapContainer>
   );
