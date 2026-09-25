@@ -2,15 +2,15 @@
 
 Read this first in a new session.
 
-> **START HERE (eighth session onward):** the compute-only plan (session 6), the pre-AWS items and Step 5
-> (`deploy/`: Terraform, inventory, render, deploy, k6 runner; session 7) are **DONE** but Step 5 was never
-> applied on AWS (no credentials/terraform here). See "Step 5" below and `deploy/README.md`. Next, in order:
-> 1. Step 6: `loadtest/run.sh <experiment> <variant>` on top of `deploy/deploy.sh` + `deploy/k6.sh`, then the
->    AWS runs (the user runs them; first `deploy.sh smoke` will be the first real test of `deploy/`).
-> 2. Step 7 analysis, and "Added TODOs" (T1 runbook + LLM analysis prompt; T2 frontend changes).
+> **START HERE (ninth session onward):** Step 6 tooling is **DONE** (session 8: `loadtest/run.ts` +
+> `loadtest/experiments.ts`, see "Step 6" below) but neither `deploy/` nor `run.ts` has run on AWS (no
+> credentials/terraform here). Next, in order:
+> 1. The AWS runs (the user runs them): `deploy.sh smoke` + `k6.sh smoke` first (first real test of `deploy/`),
+>    then `node loadtest/run.ts E1`; CAPACITY for the later experiments comes from E1 w16.
+> 2. T1 (runbook + LLM analysis prompt; user wants both the prompt and `loadtest/analyze.ts`), T2 frontend changes.
 > Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
-> which is normal); the rehearsal stack is stopped. Sessions 6 and the pre-AWS items are committed
-> (`76ff9af`); Step 5 (`deploy/`) is **not committed** yet (ask the user).
+> which is normal); the rehearsal stack is stopped. Step 5 is committed (`b9d5020`, pushed to `origin`,
+> github.com/omkargaddi78droid/railsss); Step 6 is committed and pushed.
 
 The original application plan is at
 `/home/omkar_gaddi/.claude/plans/pasted-content-id-27a5-you-are-nested-popcorn.md` (the original spec was pasted in the first session).
@@ -234,7 +234,7 @@ Build order and status:
    - API tests: 25 pass (`test/enginePool.test.ts` and `test/routeCache.test.ts` are new). Verified locally with 3 real engines, Redis in docker, `NODE_CLUSTER=2`, tiered cache, and a worker joining through the registry.
 4. **DONE: local rehearsal** (fifth session; see "Step 4" below).
 5. **DONE (session 7), not yet run on AWS**: Terraform + deploy scripts + monitoring (`deploy/`).
-6. TODO: AWS runs (E1 first).
+6. **DONE (session 8), not yet run on AWS**: experiment runner `loadtest/run.ts` (see "Step 6" below). AWS runs TODO.
 7. TODO: analysis script and report.
 
 ### User decisions (do not re-ask)
@@ -443,6 +443,37 @@ The stale engine (7070) and API processes from session 4 were killed. The rehear
 - Not done: E14 registry join (nothing SADDs workers into `ENGINE_REGISTRY_KEY` yet), per-experiment variant
   files (Step 6), `loadtest/run.sh`.
 
+### Step 6 (session 8, 2026-09-26): experiment runner, DONE (untested on AWS)
+- `loadtest/experiments.ts`: the catalogue. Each experiment = id, title, question, `params` (number defaults;
+  `null` = required, e.g. `CAPACITY` = max RPS within SLO of E1 w16), and `variants(p)` → `{name, deploy
+  overrides, scenario, k6 env, setup actions, timed "during" actions, repeats}`. Actions: `kill-workers n`
+  (SIGKILL the last n workers of the plan, after `docker update --restart=no`), `start-workers` (start stopped
+  engines, wait for admin /health), `kill-redis`, `start-redis`, `registry-set n|all` (Redis set
+  `ENGINE_REGISTRY_KEY`). E5 and E6 are marked `unsupported` (reasons in the file). E9 has no "before
+  compute-only" images variant (the old engine has no admin port, so deploy's health checks would fail).
+  E11 uses zipf s=3 cold for 30 s on NODE_CLUSTER=2. E14 kills the 8 b-slot workers, registers the 8 a-slots,
+  and at 60 s starts the b-slots and registers all.
+- `loadtest/run.ts <EXP> [params/k6/deploy KEY=VALUE] [--variants a,b] [--repeats n] [--force] [--dry-run]`,
+  `--list`. Per repeat: `deploy.sh` (flush → cold; `SKIP_PULL` after the first deploy) → `k6.sh smoke` with a
+  random seed (must pass) → setup → measured `k6.sh` (TESTID `<exp>-<variant>-r<n>`, fixed SEED so repeats
+  send the same queries) with the timeline running beside it → restore (start workers/Redis, registry all) →
+  33 Prometheus `query_range` series (5 s step, run window ± 15 s, fetched with one SSH to the monitoring host)
+  and `docker compose logs` of every host. k6 exit 99 (thresholds crossed) counts as ok. Layout:
+  `loadtest/results/<EXP>/<variant>/r<n>/{meta.json, summary.json, plan.json, variant.env, smoke/, prom/,
+  logs/, deploy.log, k6.log}`, `results/<EXP>/experiment.json`, `results/manifest.jsonl`. Repeats with
+  `meta.json` status ok are skipped on rerun (resume). A failed deploy stops the run; a failed smoke skips the
+  variant's remaining repeats. There is no `run.sh` wrapper (Node, like `deploy/*.ts`).
+- Also changed: `render.ts` `API_HOSTS=n` (E8; converts the last worker hosts to API hosts; exports `KNOWN`
+  and `applyApiHosts`), `k6.sh` `RESULT_DIR`, k6 requests send `accept-encoding: gzip` (E9; nginx only
+  compresses when `GZIP=on`).
+- Verified offline: `node --test loadtest/test/*.test.ts` (21 pass: every variant of every runnable experiment
+  renders on the default 10-host inventory, knob names match `k6.sh`, CLI parsing, API_HOSTS), strict `tsc`
+  on the new files, `--dry-run` of all experiments, and all 33 snapshot queries plus the SSH-side shell loop
+  against a throwaway Prometheus (all parse). The SSH paths themselves have not run.
+- Breakpoint defaults are guesses (E1 `MAX_RATE` = 50 × workers + 50, others 500–900, 5 min ramp); adjust with
+  params after the first AWS runs. Expect the Node tier (NODE_CLUSTER=1) to cap E1 above ~8 workers (see
+  session 6); E8 measures that.
+
 ### Next steps, in order
 
 **Step 5: `deploy/`** (reuse `loadtest/nginx/gateway.conf.template`, the Grafana provisioning + dashboard, and the local Prometheus config
@@ -458,9 +489,7 @@ turned into `file_sd`; the k6 instance only needs `loadtest/` and the `grafana/k
     `deploy/variants/<name>.env`, then runs `docker compose up -d` on every host over SSH in parallel.
   - The worker image must bake in `timetable.json`.
   - Prometheus uses `file_sd` generated from the inventory.
-- **Step 6: `loadtest/run.sh <experiment> <variant>`**: deploy, smoke, then the scenario 3 times. Save k6 summary JSON
-  and Prometheus range-query snapshots (CPU per instance, per-worker RPS) to `loadtest/results/<exp>/<variant>/`.
-  Run order: E1 (worker count 1/2/4/8/12/16) first as the baseline, then the rest of E2–E18 from `docs/scaling-plan.md`.
+- **Step 6: DONE (tooling)**, see above. AWS run order: E1 first as the baseline, then E2–E18.
 - **Step 7: `loadtest/analyze.ts`**: medians and spread over repeats, max RPS within SLO, knee, USL fit, and
   SVG charts (load the dataviz skill first). Then write `docs/load-test-report.md` with the sections listed in
   the plan, link it from README, and update this file.
@@ -525,7 +554,7 @@ Do these after the compute-only plan above, or earlier if the user asks. The use
      it must read the zip layout from T1.1, use pandas + matplotlib, write SVG/PNG files, and have no network access.
    - The prompt must describe the zip structure, the metric names, the SLO (p99 < 500 ms, errors < 0.1 %),
      and the expected output files.
-   - Note: this replaces running `loadtest/analyze.ts` ourselves (Step 7) unless the user wants both. Ask when you get there.
+   - **User decision (session 8): keep both** — the LLM prompt and our own `loadtest/analyze.ts` (Step 7).
 
 ### T2. Frontend changes
 1. **Filters.** Remove these sections from the filter panel:

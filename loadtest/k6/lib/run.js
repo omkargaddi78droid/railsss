@@ -10,7 +10,8 @@ import { DATE, WORKLOAD, nextQuery, prefixFor } from "./queries.js";
 const BASE = (__ENV.BASE_URL || "http://nginx").replace(/\/$/, "");
 const PAGE_SIZE = Number(__ENV.PAGE_SIZE || 10);
 const THINK_S = Number(__ENV.THINK_S || 0);
-const HEADERS = { "content-type": "application/json" };
+// accept-encoding: nginx compresses only when GZIP=on (E9); k6 decompresses by content-encoding
+const HEADERS = { "content-type": "application/json", "accept-encoding": "gzip" };
 
 // Server-reported timings and outcomes (from the response's meta), next to k6's own http_req_*.
 const engineMs = new Trend("route_engine_ms");

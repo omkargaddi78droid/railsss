@@ -7,6 +7,7 @@
 #
 # Knobs are the same env vars as loadtest/local/k6.sh (see loadtest/k6/). The summary lands in
 # loadtest/results/aws/<TESTID>/summary.json; TESTID also tags every sample in Prometheus.
+# RESULT_DIR (absolute) replaces that local destination (loadtest/run.ts uses it).
 # Reruns with the same SEED send the same queries, so they are cache hits unless Redis was flushed.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -42,8 +43,9 @@ cmd=(docker run --rm --network host --user 1000:1000 -v /opt/loadtest:/loadtest 
      grafana/k6:latest run --out experimental-prometheus-rw --summary-export "results/aws/$testid/summary.json"
      "k6/scenarios/$scenario.js" "$@")
 ssh "${ssh_opts[@]}" "ubuntu@$k6_ip" "$(printf '%q ' "${cmd[@]}")" || status=$?
-mkdir -p "$root/loadtest/results/aws/$testid"
-rsync -az -e "ssh ${ssh_opts[*]}" "ubuntu@$k6_ip:/opt/loadtest/results/aws/$testid/" "$root/loadtest/results/aws/$testid/"
-cp "$plan" "$here/.out/current/variant.env" "$root/loadtest/results/aws/$testid/"
-echo "summary: loadtest/results/aws/$testid/summary.json (k6 exit $status)"
+dest="${RESULT_DIR:-$root/loadtest/results/aws/$testid}"
+mkdir -p "$dest"
+rsync -az -e "ssh ${ssh_opts[*]}" "ubuntu@$k6_ip:/opt/loadtest/results/aws/$testid/" "$dest/"
+cp "$plan" "$here/.out/current/variant.env" "$dest/"
+echo "summary: $dest/summary.json (k6 exit $status)"
 exit $status

@@ -34,9 +34,9 @@ const API_KEYS = ["ENGINE_TIMEOUT_MS", "ENGINE_CONCURRENCY", "LB_STRATEGY", "RET
   "FAIL_THRESHOLD", "HEALTH_INTERVAL_MS", "NODE_CLUSTER", "CACHE_ENABLED", "CACHE_BACKEND", "CACHE_COALESCE",
   "CACHE_TTL_SECONDS", "REDIS_TIMEOUT_MS", "REDIS_LOCK_MS", "ENGINE_REGISTRY_KEY", "LOG_LEVEL"];
 const WARMER_KEYS = ["PREWARM_PAIRS", "PREWARM_TIMES", "PREWARM_DAYS", "PREWARM_TZ", "PREWARM_CONCURRENCY", "PREWARM_TTL_SECONDS"];
-const LAYOUT_KEYS = ["IMAGE_TAG", "WORKERS", "WORKERS_PER_HOST", "WORKER_PLACEMENT", "PREWARM", "GZIP", "REDIS_MAXMEMORY",
+const LAYOUT_KEYS = ["IMAGE_TAG", "API_HOSTS", "WORKERS", "WORKERS_PER_HOST", "WORKER_PLACEMENT", "PREWARM", "GZIP", "REDIS_MAXMEMORY",
   "ENGINE_PORT_BASE", "PROMETHEUS_RETENTION"];
-const KNOWN = new Set([...ENGINE_KEYS, ...API_KEYS, ...WARMER_KEYS, ...LAYOUT_KEYS]);
+export const KNOWN = new Set([...ENGINE_KEYS, ...API_KEYS, ...WARMER_KEYS, ...LAYOUT_KEYS]);
 
 export function parseEnv(text: string, source: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -61,6 +61,22 @@ export function resolveVariant(variant: string, overrides: string[], dir = join(
   const unknown = Object.keys(env).filter((k) => !KNOWN.has(k));
   if (unknown.length) throw new Error(`unknown variant keys: ${unknown.join(", ")}`);
   return env;
+}
+
+// API_HOSTS=n (E8): n hosts run the API. Missing ones are taken from the end of the worker hosts,
+// which stop running engines. Empty = the inventory's roles as they are.
+export function applyApiHosts(inv: Inventory, env: Record<string, string>): Inventory {
+  if (!env.API_HOSTS) return inv;
+  const want = int(env, "API_HOSTS");
+  const have = only(inv, "api").length;
+  if (want < have) throw new Error(`API_HOSTS=${want}, but the inventory already has ${have} API hosts`);
+  const workers = only(inv, "worker");
+  if (want - have >= workers.length) throw new Error(`API_HOSTS=${want} would leave no worker host`);
+  const convert = new Set(workers.slice(workers.length - (want - have)).map((h) => h.name));
+  return {
+    ...inv,
+    hosts: inv.hosts.map((h) => (convert.has(h.name) ? { ...h, roles: [...h.roles.filter((r) => r !== "worker"), "api"] } : h)),
+  };
 }
 
 export interface WorkerSlot { host: Host; slot: number; id: string; port: number; adminPort: number; cpuset: string | null }
@@ -115,7 +131,8 @@ function one(inv: Inventory, role: Role): Host {
 
 const OPT = "/opt/railway"; // on every host: compose.yml, loadtest/{grafana,nginx}, targets/
 
-export function render(inv: Inventory, env: Record<string, string>) {
+export function render(inventory: Inventory, env: Record<string, string>) {
+  const inv = applyApiHosts(inventory, env);
   const tag = env.IMAGE_TAG;
   if (!tag) throw new Error("IMAGE_TAG is empty: run deploy/images.sh first (it writes deploy/.out/image-tag)");
   const engineImage = `${inv.repositories.engine}:${tag}`;

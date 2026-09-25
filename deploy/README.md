@@ -72,8 +72,34 @@ Containers whose config changes are recreated; engines drain on SIGTERM (`SHUTDO
 redeploy does not show up as errors. `deploy/.out/current/` holds the deployed `plan.json` and
 `variant.env`; `k6.sh` copies both next to each summary.
 
-To move roles (for example two API hosts), edit `deploy/inventory.json` and deploy again. Exactly one
+To move roles, edit `deploy/inventory.json` and deploy again (`API_HOSTS=2` does the common case: the
+last worker host becomes a second API host). Exactly one
 host may hold `nginx`, `redis` and `monitoring`; `api` may be on several (nginx balances over them).
+
+## Experiments
+
+`loadtest/run.ts` runs one experiment of the catalogue (`loadtest/experiments.ts`, E1–E18 of
+`docs/scaling-plan.md`) on top of `deploy.sh` and `k6.sh`. For every variant and repeat (3 by default) it
+deploys (which flushes Redis, so each repeat starts cold), runs a smoke test that must pass, applies setup
+actions, runs the measured scenario with any timed fault actions (kill workers or Redis, registry join),
+restores the stack, then saves Prometheus range queries and container logs for the run's window.
+
+```bash
+node loadtest/run.ts --list                         # experiments, questions, params
+node loadtest/run.ts E1 --dry-run                   # print every command without running anything
+node loadtest/run.ts E1                             # 6 variants x 3 repeats
+node loadtest/run.ts E4 CAPACITY=420                # CAPACITY = max RPS within SLO of E1 w16
+node loadtest/run.ts E10 CAPACITY=420 --variants redis-s1.1,prewarm-s1.1 --repeats 1
+node loadtest/run.ts E17 CAPACITY=420 LB_STRATEGY=p2c NODE_CLUSTER=2   # chosen config for every variant
+```
+
+`KEY=VALUE` is an experiment param, a k6 knob (`DURATION=1m` for a quick pass) or a deploy key; k6 and
+deploy keys override every variant. Results go to `loadtest/results/<EXP>/<variant>/r<n>/` (`summary.json`,
+`meta.json`, `plan.json`, `variant.env`, `smoke/`, `prom/*.json`, `logs/<host>.log`, `deploy.log`, `k6.log`),
+plus `loadtest/results/manifest.jsonl` with one line per repeat. A repeat whose `meta.json` has status `ok`
+is skipped on a rerun, so an interrupted experiment resumes where it stopped (`--force` redoes it).
+E5 (nginx straight to workers) and E6 (cost-split pools) are not runnable yet; `--list` says why.
+`node --test loadtest/test/*.test.ts` checks offline that every variant renders on the default inventory.
 
 ## Teardown
 

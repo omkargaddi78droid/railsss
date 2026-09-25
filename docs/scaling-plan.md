@@ -98,7 +98,7 @@ Roles live in one inventory file (`deploy/inventory.yml`: instance → role list
   Plus one closed-loop run (`constant-vus`) for the methodology comparison.
 - k6 pushes metrics via Prometheus remote write (`K6_PROMETHEUS_RW_SERVER_URL`), so client and server
   metrics share one Grafana timeline. It also saves the `--summary-export` JSON.
-- `loadtest/run.sh <experiment>`: deploys the variant, runs smoke then the scenario, repeats 3 times, and
+- `loadtest/run.sh <experiment>` (built as `loadtest/run.ts` + `loadtest/experiments.ts`): deploys the variant, runs smoke then the scenario, repeats 3 times, and
   stores the results in `loadtest/results/<exp>/<variant>/`. It also stores Prometheus range-query snapshots
   (CPU per instance, per-worker RPS) for the report.
 - `loadtest/analyze.ts`: medians and spread, max RPS within SLO (p99 < 500 ms and errors < 0.1 %), the knee,
