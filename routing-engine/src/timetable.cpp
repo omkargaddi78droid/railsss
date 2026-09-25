@@ -1,6 +1,7 @@
 #include "timetable.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -69,6 +70,17 @@ void Timetable::finalize() {
   }
 }
 
+std::string fnv1a64_hex(std::string_view bytes) {
+  uint64_t h = 0xcbf29ce484222325ull;
+  for (unsigned char c : bytes) {
+    h ^= c;
+    h *= 0x100000001b3ull;
+  }
+  char buf[17];
+  std::snprintf(buf, sizeof buf, "%016llx", static_cast<unsigned long long>(h));
+  return buf;
+}
+
 Timetable parse_timetable_json(const std::string& text) {
   using nlohmann::json;
   const json doc = json::parse(text);
@@ -100,6 +112,7 @@ Timetable parse_timetable_json(const std::string& text) {
     tt.trains.push_back(std::move(tr));
   }
   tt.finalize();
+  tt.hash = fnv1a64_hex(text);
   return tt;
 }
 

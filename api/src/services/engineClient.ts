@@ -62,13 +62,28 @@ export interface EngineRoute {
   transfers: EngineTransfer[];
 }
 
+// Compact engine output (routing-engine/src/journey_json.h compact_json): the workers only compute;
+// services/journeyRenderer.ts turns a journey into an EngineRoute.
+export type CompactLeg = [train: number, boardStop: number, alightStop: number, startDay: number];
+
+export interface CompactJourney {
+  signature: string;
+  dep: number;               // absolute minutes (naive local time since 1970-01-01)
+  arr: number;
+  transfers: number;
+  train_minutes: number;
+  waiting_minutes: number;
+  legs: CompactLeg[];
+}
+
 export interface EngineResult {
   status: "ok" | "no_route";
-  query: { source: string; destination: string; search_datetime: string };
-  routes: EngineRoute[];
-  stats: Record<string, number | boolean>;
   search_complete: boolean;
   worker?: string;           // WORKER_ID of the engine process that computed it
+  timetable: string;         // FNV-1a 64 of the engine's timetable.json
+  search_minute: number;     // absolute minute of the query date + time
+  stats: { total_ms: number; profile_ms?: number; search_ms?: number; labels_popped?: number; truncated?: boolean };
+  journeys: CompactJourney[];
 }
 
 export class EngineError extends Error {

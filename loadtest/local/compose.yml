@@ -33,11 +33,13 @@ x-worker: &worker
     dockerfile: routing-engine/Dockerfile
   image: railway-routing/engine:latest
   restart: unless-stopped
-  # One process per core. ENGINE_THREADS stays at its default (8): cpp-httplib parks a thread on
-  # every kept-alive socket, and besides the pool's ENGINE_CONCURRENCY sockets per API process the
-  # health checker and Prometheus hold one each. Threads beyond the core only wait on sockets.
+  # One process per core. cpp-httplib parks a thread on every kept-alive socket, so ENGINE_THREADS
+  # must cover the pool's ENGINE_CONCURRENCY sockets per API process. Prometheus scrapes ADMIN_PORT
+  # (7071, own threads) and the pool's health checks close their connections, so nothing else holds
+  # a routing thread. Threads beyond the core only wait on sockets.
   environment: &worker-env
     TOP_K: ${TOP_K:-50}
+    ENGINE_THREADS: ${ENGINE_THREADS:-8}
     MAX_LABELS: ${MAX_LABELS:-500000}
   mem_limit: 768m   # RSS settles near 420 MB after heavy queries (per-thread malloc arenas)
   logging: *logging
@@ -83,20 +85,14 @@ services:
       LB_STRATEGY: ${LB_STRATEGY:-least_outstanding}
       RETRY_MAX: ${RETRY_MAX:-1}
       HEDGE_AFTER_MS: ${HEDGE_AFTER_MS:-0}
-      MAX_QUEUE: ${MAX_QUEUE:--1}
+      MAX_QUEUE: ${MAX_QUEUE:-auto}
       FAIL_THRESHOLD: ${FAIL_THRESHOLD:-3}
       HEALTH_INTERVAL_MS: ${HEALTH_INTERVAL_MS:-2000}
       NODE_CLUSTER: ${NODE_CLUSTER:-1}
-      # Results are cached only in Redis. Prewarm is off by default here so it does not load the
-      # workers or fill the cache before a measurement; PREWARM=true to study it.
+      # Results are cached only in Redis. The cache-warmer (profile "warm") is off by default so
+      # measurements start cold.
       CACHE_BACKEND: ${CACHE_BACKEND:-redis}
       CACHE_COALESCE: ${CACHE_COALESCE:-true}
-      PREWARM: ${PREWARM:-false}
-      PREWARM_PAIRS: ${PREWARM_PAIRS:-50}
-      PREWARM_TIMES: ${PREWARM_TIMES:-hourly}
-      PREWARM_DAYS: ${PREWARM_DAYS:-1}
-      PREWARM_CONCURRENCY: ${PREWARM_CONCURRENCY:-2}
-      PREWARM_FILE: ${PREWARM_FILE:-}
       REDIS_URL: redis://redis:6379
       REDIS_LOCK_MS: ${REDIS_LOCK_MS:-0}
       ENGINE_REGISTRY_KEY: ${ENGINE_REGISTRY_KEY:-}
@@ -107,6 +103,33 @@ services:
       w2: { condition: service_healthy }
       w3: { condition: service_healthy }
       w4: { condition: service_healthy }
+    logging: *logging
+
+  # On demand only (profile): `docker compose -f loadtest/local/compose.yml --profile warm up cache-warmer`
+  # fills Redis with the busiest searches (E10), then exits.
+  cache-warmer:
+    image: railway-routing/api:latest
+    profiles: [warm]
+    cpuset: "6,7"
+    command: ["node", "src/warmer.ts"]
+    restart: "no"
+    healthcheck: { disable: true }   # the image's check probes the API port
+    environment:
+      ENGINE_URLS: ${ENGINE_URLS:-http://w1:7070,http://w2:7070,http://w3:7070,http://w4:7070}
+      ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-2}
+      LB_STRATEGY: ${LB_STRATEGY:-least_outstanding}
+      CACHE_BACKEND: redis
+      REDIS_URL: redis://redis:6379
+      METRICS_PORT: 0
+      MAX_RESULTS: ${TOP_K:-50}
+      PREWARM_PAIRS: ${PREWARM_PAIRS:-50}
+      PREWARM_TIMES: ${PREWARM_TIMES:-hourly}
+      PREWARM_DAYS: ${PREWARM_DAYS:-1}
+      PREWARM_CONCURRENCY: ${PREWARM_CONCURRENCY:-2}
+      LOG_LEVEL: info
+    depends_on:
+      w1: { condition: service_healthy }
+      redis: { condition: service_started }
     logging: *logging
 
   nginx:

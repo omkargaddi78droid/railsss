@@ -1,5 +1,5 @@
-// Cache prewarm: when the API starts, compute the most likely searches into the Redis route cache so
-// early users hit the cache instead of the engine.
+// Cache prewarm, run by the cache-warmer service (src/warmer.ts) on startup: compute the most likely
+// searches into the Redis route cache so early users hit the cache instead of the engine.
 //
 // What is warmed (per date, today first, in PREWARM_TZ):
 //   - the PREWARM_PAIRS busiest origin/destination pairs (pair weight = product of the two stations'

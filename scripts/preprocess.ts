@@ -155,9 +155,11 @@ const stationIndex = new Map(stations.map((s, i) => [s.code, i]));
 mkdirSync(OUT, { recursive: true });
 mkdirSync(REPORTS, { recursive: true });
 
+// No timestamp in the timetable: its bytes must depend only on the raw data and the policy, because the
+// engine and the API each build it and compare its FNV-1a 64 hash.
+const generatedAt = new Date().toISOString();
 const timetable = {
   format: "railway-timetable/v1",
-  generated_at: new Date().toISOString(),
   time_model: "minutes relative to 00:00 of the train's start date (day_of_journey 1); days bitmask bit0=Sunday..bit6=Saturday refers to the start date",
   stations: stations.map((s) => ({ code: s.code, name: s.name })),
   trains: trains.map((t) => ({
@@ -203,7 +205,7 @@ writeFileSync(join(REPORTS, "quality-report.json"), JSON.stringify(report, null,
 const md: string[] = [
   "# Data quality report",
   "",
-  `Generated ${timetable.generated_at} from \`${RAW}\` with policy \`${POLICY}\`.`,
+  `Generated ${generatedAt} from \`${RAW}\` with policy \`${POLICY}\`.`,
   "",
   "## Raw dataset",
   "```json",

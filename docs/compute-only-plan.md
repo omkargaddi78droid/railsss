@@ -1,5 +1,7 @@
 # Compute-only C++ workers + service separation (then the remaining study steps)
 
+> **Status: DONE (session 6, 2026-09-26).** Results and deviations are in HANDOFF.md, "Compute-only change".
+
 ## Context
 The user wants the C++ workers to do **only route computation**, with every other concern in its own
 service/layer. Today the engine also:

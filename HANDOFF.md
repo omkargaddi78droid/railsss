@@ -2,16 +2,15 @@
 
 Read this first in a new session.
 
-> **START HERE (sixth session onward):** the next task is the **approved, not yet started** plan
-> `docs/compute-only-plan.md`: make the C++ workers compute-only (compact `/route` output + timetable hash,
-> no per-request logs), move response rendering into an API library (`journeyRenderer.ts`, render only the
-> returned page, cache compact results), and move prewarm out of the API into a one-shot `cache-warmer`
-> service. User decisions for it (do not re-ask): renderer = library in the API; prewarm = its own service;
-> the engine keeps `/route` + `/health` + `/metrics` only. Nothing of that plan is implemented yet.
-> Also see "Added TODOs" and "Improvement review" at the end of this file (runbook + LLM analysis prompt files, frontend filter/map/layout changes).
-> After it, continue with Steps 5–7 of the scaling study (section "Scaling study" below, then `docs/scaling-plan.md`).
-> Current state: the main app stack is running with Redis (`docker compose ps`); the rehearsal stack is stopped;
-> the in-API prewarm (session 5) is live code until the plan moves it. All work up to session 5 is committed on branch `scaling-study`.
+> **START HERE (eighth session onward):** the compute-only plan (session 6) and the pre-AWS items
+> (session 7: `MAX_QUEUE=auto`, engine admin port, graceful drain; see "Pre-AWS items" below) are **DONE**.
+> Next, in order:
+> 1. Steps 5–7 of the scaling study (section "Scaling study" below, then `docs/scaling-plan.md`): Terraform +
+>    `deploy/`, then `loadtest/run.sh` and the AWS runs, then analysis.
+> 2. "Added TODOs" (T1 runbook + LLM analysis prompt, after Step 6 tooling exists; T2 frontend changes).
+> Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
+> which is normal); the rehearsal stack is stopped. Sessions 6 and 7 are **not committed** yet (ask the user
+> before committing).
 
 The original application plan is at
 `/home/omkar_gaddi/.claude/plans/pasted-content-id-27a5-you-are-nested-popcorn.md` (the original spec was pasted in the first session).
@@ -60,19 +59,22 @@ Node 24 runs `.ts` files directly (type stripping), so there is no build step fo
   - `src/timetable.{h,cpp}`: loader, departure index, per-train station index.
   - `src/civil_time.h`
   - `src/router.{h,cpp}`: the algorithm.
-  - `src/journey_json.{h,cpp}`
-  - `src/server.cpp`: `POST /route`, `GET /health`, env config.
+  - `src/journey_json.{h,cpp}`: `compact_json` (string-append writer) and `config_to_json`.
+  - `src/server.cpp`: `POST /route` (compact output), `GET /health`, `GET /metrics`, env config.
   - `bench/bench.cpp`
   - `tests/`: `test_time`, `test_router` (synthetic scenarios), `test_oracle` (brute-force differential), `test_dataset` (real-data invariants), `synthetic.h`.
   - `Dockerfile`
 - `api/`: Express 5 + zod 4 + pino + mongodb driver.
   - `src/app.ts`: routes, validation, error handler, request-id logging.
+  - `src/bootstrap.ts`: service wiring shared by `apiProcess.ts` and `warmer.ts` (session 6).
+  - `src/warmer.ts`: one-shot cache-warmer entry point (session 6).
   - `src/server.ts`
   - `src/config.ts`: env vars.
   - `src/services/`:
     - `stationService.ts`: prefix search on code and names.
     - `engineClient.ts`
-    - `routeCache.ts`: Redis-only cache (brotli-compressed values) + in-flight coalescing. `prewarm.ts`: startup cache warm-up.
+    - `routeCache.ts`: Redis-only cache (brotli-compressed values) + in-flight coalescing. `prewarm.ts`: warm-up plan, used by `src/warmer.ts`.
+    - `journeyRenderer.ts`: renders compact engine journeys into the public route shape (session 6).
     - `filters.ts`: registry.
     - `routeService.ts`
   - `src/db/mongo.ts`
@@ -156,11 +158,11 @@ Rerun with `cd api && npm run bench -- --mode cold|cached --connections N --url 
 
 ## Engine env vars
 
-`TIMETABLE_PATH, ENGINE_HOST, ENGINE_PORT(7070), ENGINE_THREADS(8), MIN_TRANSFER_MINUTES(30), MAX_TRANSFERS_INTERNAL(10), TOP_K(50), K_NODE(0), SEARCH_HORIZON_MINUTES(5760), MAX_LABELS(500000), PRUNE_STAY_ON(1), PRUNE_BOARD_EARLIER(1)`
+`TIMETABLE_PATH, ENGINE_HOST, ENGINE_PORT(7070), ADMIN_PORT(7071, 0 = off), SHUTDOWN_GRACE_MS(3000), ENGINE_THREADS(8), MIN_TRANSFER_MINUTES(30), MAX_TRANSFERS_INTERNAL(10), TOP_K(50), K_NODE(0), SEARCH_HORIZON_MINUTES(5760), MAX_LABELS(500000), PRUNE_STAY_ON(1), PRUNE_BOARD_EARLIER(1)`
 
 ## API env vars
 
-`API_PORT(4000), API_HOST, ENGINE_URL, MAX_RESULTS(50), ENGINE_TIMEOUT_MS, ENGINE_CONCURRENCY(4), MONGODB_URI, MONGODB_DB(railway), STATIONS_FILE, CACHE_ENABLED, CACHE_BACKEND(redis|none), REDIS_URL, CACHE_TTL_SECONDS, PREWARM(true), PREWARM_PAIRS(50), PREWARM_TIMES(hourly), PREWARM_DAYS(1), PREWARM_TZ(Asia/Kolkata), PREWARM_CONCURRENCY(2), PREWARM_TTL_SECONDS, PREWARM_FILE, CORS_ORIGIN, LOG_LEVEL`. The frontend uses `API_INTERNAL_URL`.
+`API_PORT(4000), API_HOST, ENGINE_URL, MAX_RESULTS(50), ENGINE_TIMEOUT_MS, ENGINE_CONCURRENCY(4), MONGODB_URI, MONGODB_DB(railway), STATIONS_FILE, CACHE_ENABLED, CACHE_BACKEND(redis|none), REDIS_URL, CACHE_TTL_SECONDS, TIMETABLE_PATH; cache-warmer only: WARMER_WAIT_MS(120000), PREWARM_LOCK_MS(600000), PREWARM_PAIRS(50), PREWARM_TIMES(hourly), PREWARM_DAYS(1), PREWARM_TZ(Asia/Kolkata), PREWARM_CONCURRENCY(2), PREWARM_TTL_SECONDS, PREWARM_FILE, CORS_ORIGIN, LOG_LEVEL`. The frontend uses `API_INTERNAL_URL`.
 
 ## Remaining TODO
 
@@ -170,9 +172,7 @@ Rerun with `cd api && npm run bench -- --mode cold|cached --connections N --url 
    - Add a root Makefile or `package.json` with convenience targets.
    - Add a git remote and push (ask the user for the remote URL).
    - CI, e.g. a GitHub Actions workflow that runs the scripts, engine and API tests.
-3. Optional performance work (listed as future work in the README):
-   - Replace nlohmann serialization in the engine (about 6 ms per request) with a streaming writer.
-   - Pass the engine's bytes through the API without re-serializing (about 7 ms).
+3. (Done in session 6 by the compute-only change: the engine's nlohmann output and the API re-serialization are gone.)
 
 ## Done this session (2026-09-25, second session)
 
@@ -333,6 +333,77 @@ The stale engine (7070) and API processes from session 4 were killed. The rehear
 - `docs/scaling-plan.md` E10 is now: no cache vs Redis vs Redis + prewarm.
 - State: the main app stack is **running** again (`docker compose up -d`, with Redis); the rehearsal stack is stopped (`docker compose -f loadtest/local/compose.yml up -d` resumes it).
 
+### Compute-only change (session 6, 2026-09-26): DONE (`docs/compute-only-plan.md`)
+- **Engine** (`routing-engine/`): `/route` now returns only compact JSON from `compact_json` (plain string appends, no nlohmann
+  tree): `{status, search_complete, worker, timetable, search_minute, stats{total_ms,profile_ms,search_ms,labels_popped,truncated},
+  journeys[{signature, dep, arr, transfers, train_minutes, waiting_minutes, legs[[train_idx, board_stop, alight_stop, start_day]]}]}`.
+  `result_to_json` and the temporary `{"format":"full"}` switch are deleted. The per-request info log line is gone (startup/error
+  logs stay). `Timetable::hash` = FNV-1a 64 of the file bytes (`fnv1a64_hex`), in `/health`, the startup log and every response.
+  New `tests/test_compact.cpp` (compact output mirrors the Journey structs; FNV reference values): 27 cases pass.
+- **Timetable is now deterministic**: `scripts/preprocess.ts` no longer writes `generated_at` into `timetable.json` (the quality
+  report keeps the timestamp). Needed because the engine and API images each build the file and compare hashes. Two runs give
+  identical bytes; the images and the local file all hash to `0903dfff2928fa6e`.
+- **API**: `services/journeyRenderer.ts` (`JourneyRenderer`: loads `TIMETABLE_PATH`, skips never-running trains like the engine,
+  float32 distances via `Math.fround`, `check(hash)`, `render(journey, rank, searchMinute)`; `fnv1a64Hex`, `formatDatetime`,
+  `formatDate`). `EngineResult` is now the compact type (`CompactJourney`, `CompactLeg` in `engineClient.ts`).
+  `routeService.ts`: caches the compact result, filters on `{duration_minutes, transfer_count}` of compact journeys
+  (`filters.ts` `FilterableRoute`), slices the page, renders only that page; `engineIdentity(health)` = config JSON + `|` + timetable
+  hash is the cache-key identity. `bootstrap.ts` (`createServices`, `resolveEngineIdentity`) is shared by `apiProcess.ts` and
+  `warmer.ts`. The API exits (fatal log) if the engine's timetable hash differs from its own; a mismatched result is refused at render.
+  Dockerfile copies `timetable.json` and sets `TIMETABLE_PATH`.
+- **Cache-warmer**: `api/src/warmer.ts` (`node src/warmer.ts`, same image). Waits `WARMER_WAIT_MS` (120 s) for Redis + engine, takes the
+  Redis lock `prewarm:<identity>` (`PREWARM_LOCK_MS`), runs `planPrewarm`/`runPrewarm`, logs stats, exits 0 (1 if unreachable or every
+  query failed). `PREWARM` env var and all prewarm code in `apiProcess.ts` are gone. Main compose: `cache-warmer` service
+  (`restart: "no"`, healthcheck disabled because the image's check probes the API port); **a plain `docker compose up -d` does restart
+  the exited container** (verified). Loadtest compose: `cache-warmer` under profile `warm`
+  (`docker compose -f loadtest/local/compose.yml --profile warm up cache-warmer`).
+- **Tests**: API 36 pass, tsc clean. New `test/journeyRenderer.test.ts` (FNV, datetimes, placeholders, mismatch refusal, only the page
+  is rendered, timetable hash in the key, parity) + `test/fakeTimetable.ts`. Parity fixture `test/fixtures/render-parity.json.gz`
+  (231 KB; 15 verify + 10 heavy queries, compact + former full routes); skipped if the local timetable is missing or has another hash.
+  Before deleting `format=full`, a one-off script compared 780 queries (200 verify + 80 heavy + 500 uniform), 25,896 journeys:
+  all deep-equal.
+- **Results**:
+  - Engine response: avg ~8.8 KB (compact) vs ~257 KB (full) over the 780 queries; `engine_response_bytes` / request in the
+    breakpoint run: 8.77 KB.
+  - Main stack warmer: 1200 searches in 21–23 s (was 52 s in-API), Redis 3.3 MB (was 11.6 MB); rerun finds all 1200 cached in 0.9 s.
+    A cached 50-journey search through the frontend proxy: `api_ms` ~10 (was ~20).
+  - Rehearsal: `verify-results` identical to the baseline, cold and from Redis. Smoke passes.
+  - **Breakpoint (`START_RATE=10 MAX_RATE=150 DURATION=3m`, TESTID `breakpoint-compact`): aborts at ~108 rps (p99 517 ms), 0 errors
+    in 7400 requests; was ~58 rps.** At abort: API 0.83 CPU, workers 0.60–0.66 each (HT-sibling pairs, so their cores are close to
+    full), engine p99 327 ms, median `api_ms − engine_ms` ~19 ms (was 35–40). On the laptop the API and the workers now saturate
+    together; on AWS (16 workers) the Node tier will still be the first wall, but about twice as high (E8).
+- Not done: a headless UI screenshot (puppeteer-core is not installed any more). The public API contract is unchanged and the
+  frontend proxy returns full journeys with stops, so the UI should be unaffected; check it in a browser when convenient.
+- Plan deviation: the compact journey keeps `signature` (plan listed it) although the API could derive it; it is ~30 % of the bytes
+  (measured over the 200 verify queries, avg 9.2 KB). Dropping it would cut responses to ~6.4 KB if E9 wants it.
+
+### Pre-AWS items (session 7, 2026-09-26): DONE
+- **`MAX_QUEUE` default is `auto`** (`config.ts`, `enginePool.ts`): queue up to one capacity (workers ×
+  `ENGINE_CONCURRENCY`, recomputed per request so it follows membership); `-1` still = unlimited, a number = fixed.
+  Rehearsal spike 20→200 rps: all 2208 failures were fast 429s, 0 engine timeouts, max latency 1.5 s.
+- **Engine admin listener** (`server.cpp`): `/health` + `/metrics` also on `ADMIN_PORT` (7071, own 2-thread
+  pool). Prometheus (`loadtest/prometheus/prometheus.local.yml`) scrapes 7071; Dockerfile exposes it. `/route`
+  and `/health` stay on 7070 (the docker healthcheck curl uses it and closes its socket).
+- **Pool health checks close their connection** (`enginePool.ts` `httpHealth`: `node:http` with `agent: false`)
+  so they never park a routing thread; a non-200 (e.g. 503 draining) marks the worker unhealthy. They resolve
+  host names with c-ares (`Resolver.resolve4`, 1 s timeout, last good address kept; `/etc/hosts` names fall
+  back to `lookup`). **Why**: `getaddrinfo` for a stopped container's name takes ~5 s (`EAI_AGAIN`); with a
+  lookup every 2 s those filled libuv's 4-thread pool (shared with brotli and every lookup), all 4 workers
+  looked unhealthy, traffic fell back onto the dead worker, and a rolling stop gave 14 % errors. After the fix:
+  0/1800 errors, p99 280 ms. On AWS the inventory should render IPs anyway.
+- Result: `ENGINE_THREADS` can equal the pool concurrency. Rehearsal with `ENGINE_THREADS=2`,
+  `ENGINE_CONCURRENCY=2`, 40 rps: 0 errors, p99 295 ms. The loadtest compose passes `ENGINE_THREADS` (default 8).
+  Caveat: with `NODE_CLUSTER=n` each API process has its own sockets, so threads must be ≥ n × concurrency;
+  a hedge loser / timed-out call frees the API slot while its engine thread still computes (brief queueing).
+- **Graceful drain** (`server.cpp`): SIGTERM/SIGINT are blocked in all threads and taken by a `sigwait` thread
+  (also fixes PID 1 in the container ignoring SIGTERM, so `docker stop` took 10 s + SIGKILL). `/health` → 503
+  `{"status":"draining"}` for `SHUTDOWN_GRACE_MS` (keep > API `HEALTH_INTERVAL_MS`) while `/route` still
+  serves, then `srv.stop()`; `listen()` returns after httplib's pool finishes in-flight and queued requests;
+  logs `draining` / `stopped`; exit 0. Verified: a 490 ms search in flight at SIGTERM still gets 200; `docker
+  stop` of a worker under 30 rps takes ~4 s with 0 errors.
+- API tests 38 pass (new: `MAX_QUEUE auto`, health check closes its connection + treats 503 as down), tsc clean;
+  engine image build ran the full engine test suite.
+
 ### Next steps, in order
 
 **Step 5: `deploy/`** (reuse `loadtest/nginx/gateway.conf.template`, the Grafana provisioning + dashboard, and the local Prometheus config
@@ -357,7 +428,7 @@ turned into `file_sd`; the k6 instance only needs `loadtest/` and the `grafana/k
 
 ### Verification commands
 - `cd routing-engine && cmake --build build -j12 && ./build/engine_tests` (all pass, ~648k assertions)
-- `cd api && npm test && npx tsc --noEmit` (25 pass)
+- `cd api && npm test && npx tsc --noEmit` (38 pass)
 - The local multi-worker smoke used for step 3 (replicate it with a script file, not an inline `pkill`):
   3 engines on ports 7181–7183 with distinct `WORKER_ID`s, and Redis in docker (`redis:7-alpine`, host port 6399).
   Run `ENGINE_REGISTRY_KEY=engines REDIS_URL=redis://127.0.0.1:6399 CACHE_BACKEND=tiered NODE_CLUSTER=2 node src/server.ts`,
@@ -365,8 +436,8 @@ turned into `file_sd`; the k6 instance only needs `loadtest/` and the `grafana/k
 - Local rehearsal: `docker compose -f loadtest/local/compose.yml up -d --build`, `loadtest/local/k6.sh smoke`,
   `node loadtest/verify-results.ts --url http://localhost:8090 --against loadtest/data/verify-baseline.json`.
 
-Nothing from sessions 3–5 is committed yet. `git status` shows the frontend v2 work plus the scaling
-work. Ask the user before committing.
+Sessions 1–5 are committed (`771e17a` on branch `scaling-study`). Sessions 6 (compute-only) and 7 (pre-AWS
+items) are not committed yet; ask the user before committing.
 
 ## Gotchas learned
 
@@ -381,6 +452,9 @@ work. Ask the user before committing.
 - Scratch tools used for debugging (`one.cpp`, `cmp.cpp`, `dist.cpp`, `dbg.cpp`) were in the session scratchpad and are not needed.
 - The engine image build takes about 75 s, because it runs the full `engine_tests` suite, including the oracle.
 - The Mongo password is embedded in the connection URI in compose, so it must be URL-safe (hex).
+- **k6 reruns with the same `SEED` are Redis cache hits** (the workload is deterministic per seed, TTL 1 h), so the
+  engines sit idle. Use `SEED=$RANDOM` (or flush Redis) for any uncached measurement; check `route_cache_hit`.
+- `getaddrinfo` of a stopped docker container's name blocks ~5 s (`EAI_AGAIN`) on a libuv thread; see "Pre-AWS items".
 
 ## Added TODOs (user request, end of session 5; not started)
 
@@ -443,11 +517,12 @@ Do these after the compute-only plan above, or earlier if the user asks. The use
 
 ## Improvement review (end of session 5): user decisions
 
-To do (not started):
-- **TODO (before AWS runs): safe default for `MAX_QUEUE`.** Today `-1` = unlimited. In the rehearsal, the queue grew until the
+Status: `MAX_QUEUE` default, keep-alive/thread decoupling and graceful shutdown are DONE (session 7, see
+"Pre-AWS items"); the AWS lock-down belongs to Step 5. Original notes:
+- **DONE: safe default for `MAX_QUEUE`.** Today `-1` = unlimited. In the rehearsal, the queue grew until the
   5 s engine timeout, causing 10–20 % errors at 60 rps. Default to a cap (e.g. 2 × workers × `ENGINE_CONCURRENCY`) so overload
   becomes fast 429s. E12 still compares the variants explicitly.
-- **Next step (before E3 runs): loosen the httplib keep-alive/thread coupling in the engine.** Each kept-alive socket parks a pool
+- **DONE: loosen the httplib keep-alive/thread coupling in the engine.** Each kept-alive socket parks a pool
   thread, and the health checker + Prometheus hold one each. Options:
   - a short `set_keep_alive_timeout` / `set_keep_alive_max_count`;
   - serving `/metrics` and `/health` on a separate port with its own small listener.
@@ -458,7 +533,7 @@ To do (not started):
   - Prometheus: remote-write port from the k6 IP only.
   - SSH: admin IP only.
   - nginx :80: k6 IP only.
-- **TODO: graceful engine shutdown.** On SIGTERM: fail `/health`, stop accepting, finish in-flight searches, then exit
+- **DONE: graceful engine shutdown.** On SIGTERM: fail `/health`, stop accepting, finish in-flight searches, then exit
   (`srv.stop()` after draining). Needed so rolling redeploys and E13/E14 kill tests measure real failures, not deploy noise.
 
 Decided, do not re-propose:

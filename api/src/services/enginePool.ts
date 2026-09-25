@@ -7,8 +7,13 @@
 //   - RETRY_MAX: retry an "unavailable" failure on a different worker
 //   - HEDGE_AFTER_MS: send a duplicate to a second worker if the first has not answered by then
 //   - MAX_QUEUE: admission control; beyond capacity + MAX_QUEUE in-flight requests, reject with 429
+//     ("auto", the default, queues up to one capacity: workers * concurrency; -1 = unlimited)
 //   - health checks: FAIL_THRESHOLD consecutive failures eject a worker until /health passes again
 import { createHash } from "node:crypto";
+import { lookup, Resolver } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP } from "node:net";
 import { EngineError, postRoute, Semaphore, type EngineQuery, type EngineResult, type RoutingEngine } from "./engineClient.ts";
 
 export const LB_STRATEGIES = ["round_robin", "random", "least_outstanding", "p2c", "consistent_hash"] as const;
@@ -24,7 +29,7 @@ export interface PoolOptions {
   strategy: LbStrategy;
   retryMax: number;         // extra attempts after the first (0 = no retry)
   hedgeAfterMs: number;     // 0 = off
-  maxQueue: number;         // -1 = unlimited
+  maxQueue: number | "auto"; // -1 = unlimited; "auto" = one capacity (tracks worker membership)
   failThreshold: number;    // consecutive failures before ejection
   healthIntervalMs: number; // 0 = no background health checks
   random?: () => number;
@@ -50,10 +55,57 @@ export interface PoolCounters {
   rejected: number;
 }
 
+// Worker host names are resolved with c-ares (resolve4) rather than getaddrinfo. A stopped
+// container's name takes ~5 s to fail in getaddrinfo, and health checks every HEALTH_INTERVAL_MS
+// would fill libuv's 4-thread pool, which brotli and every other lookup share: all workers then
+// time out and look unhealthy. The last good address is kept while resolution fails.
+const resolver = new Resolver({ timeout: 1000, tries: 1 });
+const lastAddress = new Map<string, string>();
+
+async function resolveHost(host: string): Promise<string> {
+  if (isIP(host)) return host;
+  try {
+    const [addr] = await resolver.resolve4(host);
+    lastAddress.set(host, addr);
+    return addr;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    // names only in /etc/hosts (localhost) are unknown to DNS; getaddrinfo answers those at once
+    if (code === "ENOTFOUND" || code === "ENODATA") {
+      const { address } = await lookup(host);
+      lastAddress.set(host, address);
+      return address;
+    }
+    const cached = lastAddress.get(host);
+    if (cached) return cached;
+    throw e;
+  }
+}
+
+// Health checks use a fresh connection that is closed after the reply (agent: false sends
+// "Connection: close"): a kept-alive socket would park one of the engine's routing threads.
 async function httpHealth(baseUrl: string, signal: AbortSignal): Promise<Record<string, unknown>> {
-  const res = await fetch(`${baseUrl}/health`, { signal });
-  if (!res.ok) throw new Error(`engine health HTTP ${res.status}`);
-  return (await res.json()) as Record<string, unknown>;
+  const url = new URL(`${baseUrl}/health`);
+  const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+  const hostname = await resolveHost(url.hostname.replace(/^\[|\]$/g, ""));
+  return new Promise((resolve, reject) => {
+    const opts = { hostname, servername: url.hostname, headers: { host: url.host }, agent: false as const, signal };
+    const req = request(url, opts, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("error", reject);
+      res.on("end", () => {
+        if (res.statusCode !== 200) return reject(new Error(`engine health HTTP ${res.statusCode}`));
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 function hash32(s: string): number {
@@ -244,7 +296,8 @@ export class EnginePool implements RoutingEngine {
 
   async route(q: EngineQuery): Promise<EngineResult> {
     const capacity = this.workers.length * this.opts.perWorkerConcurrency;
-    if (this.opts.maxQueue >= 0 && this.inFlight >= capacity + this.opts.maxQueue) {
+    const maxQueue = this.opts.maxQueue === "auto" ? capacity : this.opts.maxQueue;
+    if (maxQueue >= 0 && this.inFlight >= capacity + maxQueue) {
       this.counters.rejected++;
       throw new EngineError("routing engine overloaded, retry later", 429, "overloaded");
     }

@@ -46,12 +46,13 @@ export interface Config {
   lbStrategy: LbStrategy;
   retryMax: number;
   hedgeAfterMs: number;
-  maxQueue: number;            // -1 = unlimited; otherwise 429 beyond workers * concurrency + maxQueue in flight
+  maxQueue: number | "auto";   // 429 beyond workers * concurrency + maxQueue in flight; -1 = unlimited, auto = one capacity
   failThreshold: number;
   healthIntervalMs: number;
   mongoUri: string | null;
   mongoDb: string;
   stationsFile: string;
+  timetablePath: string;       // same timetable.json as the engines; the API renders journeys from it
   cacheEnabled: boolean;
   cacheBackend: "none" | "redis";  // results are cached only in Redis (needs REDIS_URL), never in process
   cacheCoalesce: boolean;
@@ -63,7 +64,7 @@ export interface Config {
   nodeCluster: number;         // API processes (node:cluster); 1 = single process
   cacheTtlSeconds: number;
   prewarm: {
-    enabled: boolean;          // warm the Redis cache with popular searches on startup
+    lockMs: number;            // Redis lock so only one warmer runs at a time
     pairs: number;             // busiest origin/destination pairs
     times: string[] | "hourly";
     days: number;              // today plus days-1 following dates
@@ -89,12 +90,13 @@ export function loadConfig(): Config {
     lbStrategy: strategy(process.env.LB_STRATEGY || "round_robin"),
     retryMax: Math.max(0, int("RETRY_MAX", 1)),
     hedgeAfterMs: Math.max(0, int("HEDGE_AFTER_MS", 0)),
-    maxQueue: int("MAX_QUEUE", -1),
+    maxQueue: process.env.MAX_QUEUE === "auto" || !process.env.MAX_QUEUE ? "auto" : int("MAX_QUEUE", -1),
     failThreshold: Math.max(1, int("FAIL_THRESHOLD", 3)),
     healthIntervalMs: Math.max(0, int("HEALTH_INTERVAL_MS", 2000)),
     mongoUri: process.env.MONGODB_URI || null,
     mongoDb: process.env.MONGODB_DB || "railway",
     stationsFile: process.env.STATIONS_FILE || resolve(here, "../../data/processed/stations.json"),
+    timetablePath: process.env.TIMETABLE_PATH || resolve(here, "../../data/processed/timetable.json"),
     cacheEnabled: bool("CACHE_ENABLED", true),
     cacheBackend: oneOf("CACHE_BACKEND", ["none", "redis"] as const, "redis"),
     cacheCoalesce: bool("CACHE_COALESCE", true),
@@ -106,7 +108,7 @@ export function loadConfig(): Config {
     nodeCluster: Math.max(1, int("NODE_CLUSTER", 1)),
     cacheTtlSeconds: int("CACHE_TTL_SECONDS", 3600),
     prewarm: {
-      enabled: bool("PREWARM", true),
+      lockMs: Math.max(1000, int("PREWARM_LOCK_MS", 10 * 60_000)),
       pairs: Math.max(0, int("PREWARM_PAIRS", 50)),
       times: prewarmTimes(process.env.PREWARM_TIMES || "hourly"),
       days: Math.max(1, int("PREWARM_DAYS", 1)),

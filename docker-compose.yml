@@ -1,4 +1,4 @@
-# Full stack: MongoDB, Redis (route cache), C++ routing engine, Node API, Next.js frontend.
+# Full stack: MongoDB, Redis (route cache), C++ routing engine, Node API, cache-warmer, Next.js frontend.
 # Only the frontend is published; engine, API and MongoDB stay on the internal network.
 #   cp .env.example .env && docker compose up -d --build
 
@@ -26,7 +26,7 @@ services:
     logging: *logging
 
   redis:
-    # Route cache only: results are recomputable, so no persistence. The API prewarms it on start.
+    # Route cache only: results are recomputable, so no persistence. The cache-warmer fills it on start.
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "allkeys-lru"]
@@ -90,7 +90,31 @@ services:
       CACHE_BACKEND: redis
       REDIS_URL: redis://redis:6379
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-3600}
-      PREWARM: ${PREWARM:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      engine: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      seed: { condition: service_completed_successfully }
+    networks: [backend, frontend]
+    logging: *logging
+
+  cache-warmer:
+    # One-shot job: computes the busiest searches into Redis, then exits. Same image as the API, so it
+    # builds the same cache keys. Rerun it on its own with `docker compose up cache-warmer`.
+    image: railway-routing/api:latest
+    command: ["node", "src/warmer.ts"]
+    restart: "no"
+    healthcheck: { disable: true }   # the image's check probes the API port
+    environment:
+      ENGINE_URL: http://engine:7070
+      ENGINE_TIMEOUT_MS: ${ENGINE_TIMEOUT_MS:-5000}
+      ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-4}
+      MAX_RESULTS: 50
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MONGODB_DB: ${MONGODB_DB:-railway}
+      CACHE_BACKEND: redis
+      REDIS_URL: redis://redis:6379
+      METRICS_PORT: 0
       PREWARM_PAIRS: ${PREWARM_PAIRS:-50}
       PREWARM_TIMES: ${PREWARM_TIMES:-hourly}
       PREWARM_DAYS: ${PREWARM_DAYS:-1}
@@ -101,7 +125,7 @@ services:
       engine: { condition: service_healthy }
       redis: { condition: service_healthy }
       seed: { condition: service_completed_successfully }
-    networks: [backend, frontend]
+    networks: [backend]
     logging: *logging
 
   frontend:

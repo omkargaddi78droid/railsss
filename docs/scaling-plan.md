@@ -34,7 +34,10 @@ Roles live in one inventory file (`deploy/inventory.yml`: instance → role list
 
 ### 1. Engine as worker (`routing-engine/`)
 - One process per core. Pin with docker `--cpuset-cpus`. `ENGINE_THREADS` stays configurable because
-  httplib needs one thread per keep-alive socket. The pool caps sockets per worker.
+  httplib needs one thread per keep-alive socket. The pool caps sockets per worker. `/metrics` and
+  `/health` also live on `ADMIN_PORT` (7071, own two threads) and the pool's health checks close their
+  connections, so `ENGINE_THREADS` can equal the pool concurrency (E3).
+- Graceful shutdown: SIGTERM → `/health` 503 `draining` for `SHUTDOWN_GRACE_MS`, then drain and exit.
 - Add `GET /metrics` (Prometheus text format, no new dependency) in `src/server.cpp`: requests, latency
   histogram, in-flight, labels popped, budget hits, response bytes.
 - Add `WORKER_ID` in logs and responses (`meta.worker`).
@@ -51,7 +54,8 @@ Roles live in one inventory file (`deploy/inventory.yml`: instance → role list
   - Admission control via `MAX_QUEUE`: requests beyond the limit get 429.
   - Worker list comes from env or a Redis set (dynamic join and leave).
 - `routeCache.ts`: add a backend interface with `CACHE_BACKEND=none|memory|redis|tiered`
-  (later changed by the user: Redis only, no in-process tier, plus a startup prewarm). Keep in-flight
+  (later changed by the user: Redis only, no in-process tier, plus a prewarm that now runs as the separate
+  cache-warmer service). Keep in-flight
   coalescing. Add an optional Redis lock for cross-instance coalescing.
 - `/metrics` via `prom-client`:
   - HTTP histogram.
@@ -118,12 +122,17 @@ Load balancing and dispatch:
 API tier and bottleneck shift:
 - **E8 Node tier scaling.** One Node process, cluster of 2, and 2 gateway instances (taking one worker
   instance away). Find when the bottleneck moves from the workers to Node. Amdahl in practice.
-- **E9 Payload cost.** Full stops vs lean response, gzip at nginx on or off, and API pass-through vs
-  reparse. Measure network bytes per request between instances.
+- **E9 Payload cost (compact engine + render page only).** Since the compute-only change
+  (`docs/compute-only-plan.md`) the engine returns compact journeys (~9 KB instead of ~260 KB) and the API
+  renders only the returned page. Compare the page size the client asks for (`limit` 10 vs 50, so 10 vs 50
+  rendered journeys), gzip at nginx on or off, and, as the "before" point, the pre-change images (git commit
+  `771e17a`: full engine output, parse + reshape in Node). Measure network bytes per request between
+  instances (`engine_response_bytes`) and API CPU per request.
 
 Caching:
-- **E10 Cache.** No cache, Redis, and Redis + startup prewarm (the in-process tiers were removed by user decision),
-  under zipf with s set to 0, 0.8, 1.1 and 1.4. Report hit ratio vs RPS and latency, and prewarm time and its load on the workers.
+- **E10 Cache.** No cache, Redis, and Redis + cache-warmer (the separate one-shot service; the in-process
+  tiers were removed by user decision), under zipf with s set to 0, 0.8, 1.1 and 1.4. Report hit ratio vs
+  RPS and latency, and the warmer's run time and its load on the workers.
 - **E11 Cache stampede.** A spike of identical cold queries with no coalescing, local coalescing, and a
   Redis lock.
 

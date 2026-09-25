@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { EngineError, type EngineQuery, type EngineResult } from "../src/services/engineClient.ts";
 import { EnginePool, type LbStrategy, type PoolOptions } from "../src/services/enginePool.ts";
 
@@ -7,7 +9,7 @@ const URLS = ["http://w1", "http://w2", "http://w3", "http://w4"];
 const q = (source = "BD", destination = "NDLS"): EngineQuery => ({ source, destination, date: "2026-09-25", time: "10:00" });
 
 function result(worker: string): EngineResult {
-  return { status: "ok", query: { source: "BD", destination: "NDLS", search_datetime: "" }, routes: [], stats: { worker } as any, search_complete: true };
+  return { status: "ok", search_complete: true, worker, timetable: "", search_minute: 0, stats: { total_ms: 1 }, journeys: [] };
 }
 
 // Fake workers: per-URL latency and failure behaviour, and a log of which worker served each call.
@@ -96,7 +98,7 @@ test("retry moves to another worker; repeated failures eject until health passes
   const fw = fakeWorkers(behaviour);
   const p = pool("round_robin", fw, { retryMax: 1 });
   const r = await p.route(q());
-  assert.equal((r.stats as any).worker, "http://w2");
+  assert.equal(r.worker, "http://w2");
   assert.equal(p.counters.retries, 1);
 
   await p.route(q()); await p.route(q()); await p.route(q()); // w3, w4, then w1 fails again -> ejected
@@ -127,7 +129,7 @@ test("hedging answers from the fast worker and aborts the slow one", async () =>
   const p = pool("round_robin", fw, { hedgeAfterMs: 20 });
   const t0 = performance.now();
   const r = await p.route(q());
-  assert.equal((r.stats as any).worker, "http://w2");
+  assert.equal(r.worker, "http://w2");
   assert.ok(performance.now() - t0 < 150);
   assert.deepEqual(fw.aborted, ["http://w1"]);
   assert.equal(p.counters.hedges, 1);
@@ -135,7 +137,7 @@ test("hedging answers from the fast worker and aborts the slow one", async () =>
   assert.equal(p.snapshot().workers[0].errors, 0, "a hedge loser is not counted as a worker error");
 
   const fast = await p.route(q());                 // w3 answers before the timer: no hedge
-  assert.equal((fast.stats as any).worker, "http://w3");
+  assert.equal(fast.worker, "http://w3");
   assert.equal(p.counters.hedges, 1);
 });
 
@@ -147,6 +149,44 @@ test("admission control rejects beyond capacity + MAX_QUEUE with 429", async () 
   await Promise.all(running);
   assert.equal(p.counters.rejected, 1);
   await p.route(q());                                               // capacity is back
+});
+
+test("MAX_QUEUE auto queues one capacity and follows worker membership", async () => {
+  const fw = fakeWorkers(Object.fromEntries(URLS.map((u) => [u, { ms: 30 }])));
+  const p = pool("least_outstanding", fw, { maxQueue: "auto" });
+  const running = Array.from({ length: 8 }, () => p.route(q()));   // 4 slots + 4 queued
+  await assert.rejects(p.route(q()), (e: EngineError) => e.kind === "overloaded");
+  await Promise.all(running);
+  p.setWorkers(URLS.slice(0, 2));
+  const fewer = Array.from({ length: 4 }, () => p.route(q()));     // 2 slots + 2 queued
+  await assert.rejects(p.route(q()), (e: EngineError) => e.kind === "overloaded");
+  await Promise.all(fewer);
+  assert.equal(p.counters.rejected, 2);
+});
+
+test("default health check closes its connection and treats non-200 as down", async () => {
+  const seen: (string | undefined)[] = [];
+  let status = 200;
+  const srv = createServer((req, res) => {
+    seen.push(req.headers.connection);
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: status === 200 ? "ok" : "draining", config: { top_k: 50 } }));
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  const p = new EnginePool({
+    urls: [url], timeoutMs: 1000, perWorkerConcurrency: 1, strategy: "round_robin", retryMax: 0, hedgeAfterMs: 0,
+    maxQueue: -1, failThreshold: 5, healthIntervalMs: 0,
+  });
+  try {
+    assert.deepEqual((await p.health()).config, { top_k: 50 });
+    status = 503;                                                    // a draining engine
+    await p.checkHealth();
+    assert.equal(p.snapshot().workers[0].healthy, false);
+    assert.deepEqual(seen, ["close", "close"]);
+  } finally {
+    srv.close();
+  }
 });
 
 test("timeout covers queueing on a busy worker", async () => {

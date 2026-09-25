@@ -6,14 +6,19 @@ minimum transfer, operating days and multi-day (overnight) schedules honored.
 
 ```
 browser ──► Next.js frontend (:3000, published) ──► Node/Express API (:4000) ──► C++ routing engine (:7070)
-                                                         │
-                                                         ├──► Redis (route cache, prewarmed on start)
+                                                         │   (renders journeys)     (compute only: compact
+                                                         │                           journeys, ~9 KB)
+                                                         ├──► Redis (route cache of compact results)
                                                          └──► MongoDB (station master, trains, ingest reports)
+cache-warmer (one-shot, same image as the API) ──► engine ──► Redis   (fills the cache on `docker compose up`)
 ```
 
-- **routing-engine/**: C++20 long-running HTTP service. Loads the preprocessed timetable once and answers
-  `POST /route` in single-digit to tens of milliseconds.
-- **api/**: Express 5 + zod + pino. Validation, station search, route cache, filters, pagination.
+- **routing-engine/**: C++20 long-running HTTP service that only computes. Loads the preprocessed timetable
+  once and answers `POST /route` in single-digit to tens of milliseconds with compact journeys (timetable
+  indices and absolute minutes), plus `/health` and `/metrics`.
+- **api/**: Express 5 + zod + pino. Validation, station search, dispatch to the engine workers, route cache,
+  filters, pagination, and rendering of the returned page (names, stops, datetimes) from its own copy of
+  the timetable. `src/warmer.ts` is the one-shot cache-warmer.
 - **frontend/**: Next.js 16 (App Router), React 19, Tailwind 4, Leaflet. Station autocomplete, results
   timeline, a route map drawn in the browser from bundled station coordinates, client-side filters and
   sorting, pagination.
@@ -378,14 +383,25 @@ unfiltered ranking, so they stay stable while filters change.
 
 ### API internals
 
-- **Route cache**: Redis only (nothing is cached in API memory), shared by every API process. Values are
-  brotli-compressed JSON (a ~270 KB result becomes ~8 KB) with a TTL. The key is
-  `src|dst|date|time|engine-config-hash`. Concurrent identical queries in one process share one engine call
-  (in-flight coalescing). Redis errors fail open: the search is computed and not cached.
-- **Cache prewarm**: on startup the API computes the busiest `PREWARM_PAIRS` station pairs at every hour of
-  today (the frontend's default time is the current hour, and the current hour goes first) into Redis, in
-  the background with `PREWARM_CONCURRENCY` searches at a time. A Redis lock lets one process do it;
-  entries already in Redis are skipped, so every restart re-runs it cheaply.
+- **Compact engine results, rendered in the API**: the engine returns each journey as
+  `[train_idx, board_stop, alight_stop, start_day]` legs plus absolute minutes (about 9 KB for 50 journeys,
+  instead of about 260 KB fully rendered). `src/services/journeyRenderer.ts` loads the same
+  `timetable.json` (`TIMETABLE_PATH`), rebuilds the engine's train list, and renders only the page being
+  returned: names, every intermediate stop, datetimes, distances (float32, as in the engine). Filters run on
+  the compact journeys first. Both sides hash the timetable file (FNV-1a 64); the API refuses to start, or to
+  render a result, when the engine's hash differs. A parity test checks the renderer against the engine's
+  former full output (`api/test/fixtures/render-parity.json.gz`; 780 queries / 25,896 journeys were
+  compared before the full format was removed).
+- **Route cache**: Redis only (nothing is cached in API memory), shared by every API process. Values are the
+  compact engine results, brotli-compressed, with a TTL. The key is
+  `src|dst|date|time|engine-config+timetable-hash`, so a new timetable never serves stale entries.
+  Concurrent identical queries in one process share one engine call (in-flight coalescing). Redis errors
+  fail open: the search is computed and not cached.
+- **Cache-warmer**: a one-shot service (`node src/warmer.ts`, same image as the API) that runs on every
+  `docker compose up`. It waits for Redis and the engine, computes the busiest `PREWARM_PAIRS` station pairs
+  at every hour of today (the frontend's default time is the current hour, and the current hour goes first)
+  with `PREWARM_CONCURRENCY` searches at a time, logs its stats and exits. A Redis lock lets one warmer run at
+  a time; entries already in Redis are skipped, so re-running it is cheap (`docker compose up cache-warmer`).
 - **Engine client**: keep-alive `fetch`, a timeout that covers queueing as well as the call, and a FIFO
   semaphore (`ENGINE_CONCURRENCY`). The semaphore matters because cpp-httplib holds a worker thread for
   each open keep-alive connection. Without it, a burst opens more sockets than the engine has threads, and
@@ -469,7 +485,9 @@ All settings come from environment variables. See `.env.example`.
 |---|---|---|---|
 | engine | `TIMETABLE_PATH` | `/data/timetable.json` | Preprocessed timetable |
 | | `ENGINE_HOST` / `ENGINE_PORT` | `0.0.0.0` / `7070` | |
-| | `ENGINE_THREADS` | 8 | HTTP worker threads. One is held per open connection, so keep it above the API's `ENGINE_CONCURRENCY` |
+| | `ENGINE_THREADS` | 8 | HTTP routing threads. One is held per open keep-alive connection, so keep it at least the API's `ENGINE_CONCURRENCY` × API processes |
+| | `ADMIN_PORT` | 7071 | Separate two-thread listener for `/health` and `/metrics` (0 = off) |
+| | `SHUTDOWN_GRACE_MS` | 3000 | On SIGTERM, `/health` returns 503 `draining` for this long, then in-flight searches finish and the engine exits |
 | | `MIN_TRANSFER_MINUTES` | 30 | Minimum transfer time (≥ 1) |
 | | `MAX_TRANSFERS_INTERNAL` | 10 | Transfer cap |
 | | `TOP_K` | 50 | Results computed (compose sets it explicitly; keep it equal to the API's `MAX_RESULTS`) |
@@ -484,8 +502,10 @@ All settings come from environment variables. See `.env.example`.
 | | `MAX_RESULTS` | 50 | Journeys computed per search and the maximum `limit`; the engine's `TOP_K` must be at least this |
 | | `MONGODB_URI`, `MONGODB_DB` | unset, `railway` | Mongo is optional outside Docker |
 | | `STATIONS_FILE` | `data/processed/stations.json` | Fallback station master |
-| | `CACHE_ENABLED`, `CACHE_BACKEND`, `REDIS_URL`, `CACHE_TTL_SECONDS` | true, redis, (compose), 3600 | Redis only; about 10 KB per compressed entry |
-| | `PREWARM`, `PREWARM_PAIRS`, `PREWARM_TIMES`, `PREWARM_DAYS`, `PREWARM_TZ`, `PREWARM_CONCURRENCY`, `PREWARM_TTL_SECONDS`, `PREWARM_FILE` | true, 50, hourly, 1, Asia/Kolkata, 2, (days+1)×86400, none | Startup warm-up of the Redis cache |
+| | `TIMETABLE_PATH` | `data/processed/timetable.json` (image: `/app/data/processed/timetable.json`) | Timetable used to render journeys; must be the engines' file |
+| | `CACHE_ENABLED`, `CACHE_BACKEND`, `REDIS_URL`, `CACHE_TTL_SECONDS` | true, redis, (compose), 3600 | Redis only; a few KB per compressed entry |
+| cache-warmer | `PREWARM_PAIRS`, `PREWARM_TIMES`, `PREWARM_DAYS`, `PREWARM_TZ`, `PREWARM_CONCURRENCY`, `PREWARM_TTL_SECONDS`, `PREWARM_FILE` | 50, hourly, 1, Asia/Kolkata, 2, (days+1)×86400, none | What the warmer computes (plus the API's engine/Redis/Mongo variables) |
+| | `WARMER_WAIT_MS`, `PREWARM_LOCK_MS` | 120000, 600000 | How long to wait for Redis and the engine; warmer lock TTL |
 | | `CORS_ORIGIN`, `LOG_LEVEL` | unset, `info` | |
 | frontend | `API_INTERNAL_URL` | `http://127.0.0.1:4000` | Proxy target |
 | compose | `PUBLIC_PORT` | 80 | Published frontend port |
@@ -580,6 +600,9 @@ Where the time goes for a cold request (medians):
 | Routing (profile + search) | ~8 ms |
 | Engine JSON serialization (nlohmann, about 100 KB for 20 routes with all stops) | ~6 ms |
 | API: parse the engine response, shape it, and serialize | ~7 ms |
+
+(Measured before the compute-only change, when the engine still rendered full journeys; the engine now
+writes a compact result with plain string appends and the API renders only the returned page.)
 | Next.js proxy hop | ~20 ms |
 
 At 10 connections, `api_ms` includes queueing for the 4 engine slots, which is intentional backpressure.
@@ -607,8 +630,8 @@ cd api && npm run bench -- --mode cold --connections 10 --duration 20 --url http
 | Suite | Command | What it covers |
 |---|---|---|
 | Preprocessing and geocoding (15 tests) | `cd scripts && npm test` | Overnight rule (including KUR 23:45/00:05 doj 2), code recovery, name canonicalization, policies; coordinate interpolation and the outlier guard |
-| Engine (25 cases, about 258k assertions) | `routing-engine/build/engine_tests` | See below |
-| API (30 tests) | `cd api && npm test` | Validation and error codes, pagination, filters, Redis cache, prewarm, coalescing, pool strategies, no-route message, engine-down 503, semaphore |
+| Engine (27 cases, about 648k assertions) | `routing-engine/build/engine_tests` | See below |
+| API (36 tests) | `cd api && npm test` | Validation and error codes, pagination, filters, Redis cache, prewarm, coalescing, pool strategies, no-route message, engine-down 503, semaphore, renderer parity with the engine's former output, timetable hash |
 | Types | `cd api && npx tsc --noEmit` | |
 | Frontend build | `cd frontend && npx next build` | Type check and build |
 
@@ -647,14 +670,13 @@ The engine suites are:
 - The map's station positions are approximate for the 110 interpolated stations, and 35 small stations
   have no position. Codes the raw data reuses for two stations (BPR, MGR) draw a visible jump.
 - `K_NODE > 0` makes the search approximate. It is off by default.
-- The cache key does not include a timetable version. Redis outlives API and engine restarts, so after
-  loading a new timetable, flush Redis (`docker compose exec redis redis-cli FLUSHALL`).
+- The API image and the engine image each build `timetable.json` from the raw data (the file is
+  deterministic: no timestamp). If they ever differ (a different `CLEAN_POLICY`, or images built from
+  different commits), the API refuses to start.
 
 ## Future work
 
 - A binary, memory-mapped timetable format, for faster cold starts and a smaller image.
-- A streaming JSON writer in the engine to replace nlohmann trees (about 6 ms per request), and returning
-  the engine's bytes through the API without re-serializing.
 - Caching backward profiles per (destination, date window), which is reusable across sources.
 - RAPTOR-style round pruning to shrink the label space for long-distance pairs.
 - Horizontal scaling: engine replicas behind the API (they are stateless). The Redis cache is already

@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import request from "supertest";
 import { createApp } from "../src/app.ts";
 import { createLogger } from "../src/logger.ts";
-import { EngineError, Semaphore, type EngineQuery, type EngineResult, type EngineRoute, type RoutingEngine } from "../src/services/engineClient.ts";
+import { EngineError, Semaphore, type EngineQuery, type EngineResult, type RoutingEngine } from "../src/services/engineClient.ts";
 import { RouteCache } from "../src/services/routeCache.ts";
 import { RouteService, NO_ROUTE_MESSAGE } from "../src/services/routeService.ts";
 import { StationService } from "../src/services/stationService.ts";
 import { FakeRemote } from "./fakeRemote.ts";
+import { journey, renderer, result } from "./fakeTimetable.ts";
 
 const STATIONS = [
   { code: "BD", name: "BADNERA JN.", all_known_names: ["BADNERA JN."], train_count: 47 },
@@ -18,40 +19,24 @@ const STATIONS = [
   { code: "B", name: "BHOPAL SOMETHING", all_known_names: [], train_count: 1 },
 ];
 
-function route(rank: number, transfers: number, duration: number): EngineRoute {
-  const seg = (n: string) => ({
-    train_number: n, train_name: n + " EXP", train_type: "SUPERFAST", train_start_date: "2026-09-25",
-    from_station: { code: "BD", name: "BADNERA JN." }, to_station: { code: "NDLS", name: "NEW DELHI" },
-    departure_datetime: "2026-09-25T10:05:00", arrival_datetime: "2026-09-26T08:00:00", duration_minutes: 100,
-    distance_km: 100, stop_count: 1, stops: [],
-  });
-  return {
-    rank, signature: `sig${rank}`, departure_datetime: "2026-09-25T10:05:00", arrival_datetime: "2026-09-26T08:00:00",
-    duration_minutes: duration, elapsed_from_search_minutes: duration + 5, initial_wait_minutes: 5, train_travel_minutes: duration - 60,
-    waiting_minutes: 60, transfer_count: transfers, segment_count: transfers + 1, is_direct: transfers === 0, distance_km: 500,
-    segments: Array.from({ length: transfers + 1 }, (_, i) => seg(String(10000 + i))), transfers: [],
-  };
-}
-
 class FakeEngine implements RoutingEngine {
   calls: EngineQuery[] = [];
   mode: "ok" | "empty" | "down" = "ok";
   async route(q: EngineQuery): Promise<EngineResult> {
     this.calls.push(q);
     if (this.mode === "down") throw new EngineError("routing engine unreachable", 503, "unavailable");
-    const routes = this.mode === "empty" ? [] : Array.from({ length: 20 }, (_, i) => route(i + 1, i % 4, 1000 + i * 150));
-    return { status: routes.length ? "ok" : "no_route", query: { source: q.source, destination: q.destination, search_datetime: `${q.date}T${q.time}:00` }, routes, stats: { total_ms: 4.2 }, search_complete: true };
+    return result(this.mode === "empty" ? [] : Array.from({ length: 20 }, (_, i) => journey(i + 1, i % 4, 1000 + i * 150)));
   }
   async health() {
     if (this.mode === "down") throw new Error("down");
-    return { status: "ok", config: { min_transfer_minutes: 30 } };
+    return { status: "ok", timetable: renderer.hash, config: { min_transfer_minutes: 30 } };
   }
 }
 
 function setup(cacheEnabled = true) {
   const engine = new FakeEngine();
   const stations = new StationService(STATIONS, "test");
-  const routes = new RouteService(engine, stations, new RouteCache<EngineResult>(cacheEnabled ? new FakeRemote() : null, 60), 20);
+  const routes = new RouteService(engine, stations, new RouteCache<EngineResult>(cacheEnabled ? new FakeRemote() : null, 60), renderer, 20);
   const app = createApp({ logger: createLogger("silent"), stations, routes, engine, maxResults: 20, maxDurationFilterMinutes: 3000 });
   return { app, engine };
 }

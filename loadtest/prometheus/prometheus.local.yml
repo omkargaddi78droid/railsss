@@ -7,7 +7,7 @@ global:
 scrape_configs:
   - job_name: engine
     static_configs:
-      - targets: [w1:7070, w2:7070, w3:7070, w4:7070]
+      - targets: [w1:7071, w2:7071, w3:7071, w4:7071]   # ADMIN_PORT
   - job_name: api
     static_configs:
       - targets: [api:9464]

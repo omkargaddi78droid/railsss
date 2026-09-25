@@ -6,6 +6,7 @@ import { RouteCache } from "../src/services/routeCache.ts";
 import { RouteService } from "../src/services/routeService.ts";
 import { StationService } from "../src/services/stationService.ts";
 import { FakeRemote } from "./fakeRemote.ts";
+import { renderer, result } from "./fakeTimetable.ts";
 
 const STATIONS = [
   { code: "A", name: "A", all_known_names: [], train_count: 100 },
@@ -44,7 +45,7 @@ class CountingEngine implements RoutingEngine {
   async route(q: EngineQuery): Promise<EngineResult> {
     this.calls.push(q);
     if (q.source === this.failOn) throw new Error("engine down");
-    return { status: "ok", query: { source: q.source, destination: q.destination, search_datetime: `${q.date}T${q.time}:00` }, routes: [], stats: {}, search_complete: true };
+    return result([]);
   }
   async health() { return { status: "ok" }; }
 }
@@ -53,7 +54,7 @@ test("prewarm fills the shared cache; a restart finds everything cached; a live 
   const remote = new FakeRemote();
   const engine = new CountingEngine();
   const stations = new StationService(STATIONS, "test");
-  const routes = new RouteService(engine, stations, new RouteCache<EngineResult>(remote, 60), 20);
+  const routes = new RouteService(engine, stations, new RouteCache<EngineResult>(remote, 60), renderer, 20);
   const plan = planPrewarm(STATIONS, { pairs: 3, times: ["09:00", "10:00"], days: 1, tz: "UTC" }, new Date("2026-09-25T08:00:00Z"));
 
   const first = await runPrewarm(plan, (q) => routes.warm(q), 2);
@@ -62,7 +63,7 @@ test("prewarm fills the shared cache; a restart finds everything cached; a live 
   assert.equal(engine.calls[0].limit, 20); // same full top-N as a live search, so the key is shared
 
   // new API process (restart): same store, nothing recomputed
-  const restarted = new RouteService(engine, stations, new RouteCache<EngineResult>(remote, 60), 20);
+  const restarted = new RouteService(engine, stations, new RouteCache<EngineResult>(remote, 60), renderer, 20);
   const second = await runPrewarm(plan, (q) => restarted.warm(q), 2);
   assert.deepEqual([second.computed, second.already_cached], [0, 6]);
 
@@ -74,7 +75,7 @@ test("prewarm fills the shared cache; a restart finds everything cached; a live 
 test("prewarm counts failures and carries on", async () => {
   const engine = new CountingEngine();
   engine.failOn = "B";
-  const routes = new RouteService(engine, new StationService(STATIONS, "test"), new RouteCache<EngineResult>(new FakeRemote(), 60), 20);
+  const routes = new RouteService(engine, new StationService(STATIONS, "test"), new RouteCache<EngineResult>(new FakeRemote(), 60), renderer, 20);
   const plan = planPrewarm(STATIONS, { pairs: 4, times: ["09:00"], days: 1, tz: "UTC" }, new Date("2026-09-25T08:00:00Z"));
   const s = await runPrewarm(plan, (q) => routes.warm(q), 1);
   assert.deepEqual([s.computed, s.failed], [3, 1]);

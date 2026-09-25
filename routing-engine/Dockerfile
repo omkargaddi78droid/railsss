@@ -27,6 +27,6 @@ COPY --from=build /src/routing-engine/build/routing_engine /usr/local/bin/routin
 COPY --from=data /app/data/processed/timetable.json /data/timetable.json
 ENV TIMETABLE_PATH=/data/timetable.json ENGINE_HOST=0.0.0.0 ENGINE_PORT=7070
 USER engine
-EXPOSE 7070
+EXPOSE 7070 7071
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 CMD curl -fsS http://127.0.0.1:${ENGINE_PORT}/health || exit 1
 ENTRYPOINT ["/usr/local/bin/routing_engine"]

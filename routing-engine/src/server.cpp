@@ -1,15 +1,24 @@
-// Long-running routing service. Loads the processed timetable once, then answers
+// Long-running, compute-only routing worker. Loads the processed timetable once, then answers
 //   POST /route   {"source":"BD","destination":"NDLS","date":"2026-09-25","time":"10:00","limit":50}
+//                 -> compact journeys (timetable indices + absolute minutes; see journey_json.h)
 //   GET  /health
 //   GET  /metrics  (Prometheus text format)
+// /health and /metrics are also served on ADMIN_PORT by a separate two-thread listener, so health
+// checkers and Prometheus never park one of the routing threads on their kept-alive sockets.
+// SIGTERM/SIGINT drain the worker: /health turns 503 "draining" for SHUTDOWN_GRACE_MS (dispatchers
+// eject it while it still serves), then the listeners stop and in-flight searches finish.
 // Configuration comes from environment variables (see .env.example).
 
 #include <atomic>
+#include <csignal>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <thread>
+
+#include <pthread.h>
 
 #include "civil_time.h"
 #include "httplib.h"
@@ -55,6 +64,14 @@ void reply(httplib::Response& res, int status, const json& body) {
 }  // namespace
 
 int main() {
+  // Block the shutdown signals in every thread (httplib's pools inherit the mask); a dedicated
+  // thread receives them with sigwait. This also makes the engine stoppable as PID 1 in a container.
+  sigset_t stop_signals;
+  sigemptyset(&stop_signals);
+  sigaddset(&stop_signals, SIGTERM);
+  sigaddset(&stop_signals, SIGINT);
+  pthread_sigmask(SIG_BLOCK, &stop_signals, nullptr);
+
   const auto t0 = std::chrono::steady_clock::now();
   const std::string path = env_str("TIMETABLE_PATH", "../data/processed/timetable.json");
   rail::RouterConfig cfg;
@@ -68,9 +85,12 @@ int main() {
   cfg.max_labels = static_cast<uint32_t>(env_int("MAX_LABELS", static_cast<int>(cfg.max_labels)));
   const std::string host = env_str("ENGINE_HOST", "0.0.0.0");
   const int port = env_int("ENGINE_PORT", 7070);
-  // cpp-httplib holds a pool thread per open (keep-alive) connection, so this must exceed the
-  // number of concurrent client connections (the API caps its own at ENGINE_CONCURRENCY).
+  // cpp-httplib holds a pool thread per open (keep-alive) connection, so this must be at least the
+  // number of concurrent client connections: the API's ENGINE_CONCURRENCY per API process, plus
+  // any health checker or scraper that uses ENGINE_PORT instead of ADMIN_PORT.
   const int threads = env_int("ENGINE_THREADS", 8);
+  const int admin_port = env_int("ADMIN_PORT", 7071);  // 0 = no separate admin listener
+  const int grace_ms = env_int("SHUTDOWN_GRACE_MS", 3000);
   // Identifies this process when many workers sit behind one dispatcher (logs, metrics, responses).
   const std::string worker_id = env_str("WORKER_ID", "engine");
 
@@ -86,6 +106,7 @@ int main() {
   log_line({{"level", "info"},
             {"msg", "timetable loaded"},
             {"path", path},
+            {"timetable", tt.hash},
             {"stations", tt.stations.size()},
             {"trains", tt.trains.size()},
             {"stops", tt.stops.size()},
@@ -95,6 +116,7 @@ int main() {
   std::atomic<uint64_t> requests{0}, errors{0};
   std::atomic<uint64_t> total_route_us{0};
   rail::EngineMetrics metrics;
+  std::atomic<bool> draining{false};
 
   httplib::Server srv;
   srv.new_task_queue = [threads] { return new httplib::ThreadPool(static_cast<size_t>(threads)); };
@@ -102,11 +124,13 @@ int main() {
   // delayed ACK of the headers (~40 ms per response on Linux).
   srv.set_tcp_nodelay(true);
 
-  srv.Get("/health", [&](const httplib::Request&, httplib::Response& res) {
+  const auto health = [&](const httplib::Request&, httplib::Response& res) {
     const uint64_t n = requests.load();
-    reply(res, 200,
-          {{"status", "ok"},
+    const bool drain = draining.load();
+    reply(res, drain ? 503 : 200,
+          {{"status", drain ? "draining" : "ok"},
            {"worker", worker_id},
+           {"timetable", tt.hash},
            {"stations", tt.stations.size()},
            {"trains", tt.trains.size()},
            {"load_ms", load_ms},
@@ -114,11 +138,12 @@ int main() {
            {"errors", errors.load()},
            {"avg_route_ms", n ? total_route_us.load() / 1000.0 / n : 0.0},
            {"config", rail::config_to_json(router.config())}});
-  });
-
-  srv.Get("/metrics", [&](const httplib::Request&, httplib::Response& res) {
+  };
+  const auto metrics_text = [&](const httplib::Request&, httplib::Response& res) {
     res.set_content(metrics.render(worker_id), "text/plain; version=0.0.4");
-  });
+  };
+  srv.Get("/health", health);
+  srv.Get("/metrics", metrics_text);
 
   srv.Post("/route", [&](const httplib::Request& req, httplib::Response& res) {
     const double start = now_ms();
@@ -161,29 +186,16 @@ int main() {
       ++metrics.requests_invalid;
       return reply(res, 400, {{"status", "invalid"}, {"error", r.error}});
     }
-    json out = rail::result_to_json(tt, q, r);
-    out["worker"] = worker_id;
     ++requests;
     total_route_us += static_cast<uint64_t>(r.stats.total_ms * 1000);
-    reply(res, 200, out);
+    res.set_content(rail::compact_json(tt, q, r, worker_id), "application/json");
+    res.status = 200;
     ++(r.status == rail::RouteStatus::Ok ? metrics.requests_ok : metrics.requests_no_route);
     if (r.stats.truncated) ++metrics.budget_hits;
     metrics.labels_popped += r.stats.labels_popped;
     metrics.response_bytes += res.body.size();
     metrics.route_seconds.observe(r.stats.total_ms / 1000.0);
     metrics.handler_seconds.observe((now_ms() - start) / 1000.0);
-    log_line({{"level", "info"},
-              {"msg", "route"},
-              {"worker", worker_id},
-              {"source", str("source")},
-              {"destination", str("destination")},
-              {"date", str("date")},
-              {"time", str("time")},
-              {"routes", r.journeys.size()},
-              {"route_ms", r.stats.total_ms},
-              {"handler_ms", now_ms() - start},
-              {"labels", r.stats.labels_created},
-              {"truncated", r.stats.truncated}});
   });
 
   srv.set_exception_handler([&](const httplib::Request&, httplib::Response& res, std::exception_ptr ep) {
@@ -200,10 +212,46 @@ int main() {
     reply(res, 500, {{"status", "error"}, {"error", "internal error"}});
   });
 
-  log_line({{"level", "info"}, {"msg", "listening"}, {"host", host}, {"port", port}, {"threads", threads}, {"worker", worker_id}});
+  httplib::Server admin;
+  admin.new_task_queue = [] { return new httplib::ThreadPool(2); };
+  admin.set_tcp_nodelay(true);
+  admin.Get("/health", health);
+  admin.Get("/metrics", metrics_text);
+  std::thread admin_thread;
+  if (admin_port > 0) {
+    if (!admin.bind_to_port(host, admin_port)) {
+      log_line({{"level", "fatal"}, {"msg", "failed to bind"}, {"host", host}, {"port", admin_port}});
+      return 1;
+    }
+    admin_thread = std::thread([&] { admin.listen_after_bind(); });
+  }
+
+  // Detached: if the main bind fails, main returns while this thread still waits in sigwait.
+  std::thread([&] {
+    int sig = 0;
+    sigwait(&stop_signals, &sig);
+    draining = true;
+    log_line({{"level", "info"}, {"msg", "draining"}, {"signal", sig}, {"grace_ms", grace_ms}});
+    std::this_thread::sleep_for(std::chrono::milliseconds(grace_ms));
+    srv.wait_until_ready();
+    srv.stop();  // listen() returns once the in-flight and already accepted requests are answered
+  }).detach();
+
+  log_line({{"level", "info"},
+            {"msg", "listening"},
+            {"host", host},
+            {"port", port},
+            {"admin_port", admin_port},
+            {"threads", threads},
+            {"worker", worker_id}});
   if (!srv.listen(host, port)) {
     log_line({{"level", "fatal"}, {"msg", "failed to bind"}, {"host", host}, {"port", port}});
-    return 1;
+    std::_Exit(1);  // skip destructors: the admin and signal threads still reference locals
   }
+  if (admin_thread.joinable()) {
+    admin.stop();
+    admin_thread.join();
+  }
+  log_line({{"level", "info"}, {"msg", "stopped"}, {"requests", requests.load()}});
   return 0;
 }

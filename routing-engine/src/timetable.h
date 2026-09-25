@@ -57,6 +57,9 @@ struct Timetable {
   std::vector<uint32_t> station_index_end;  // per train: end offset into station_index
   int32_t max_span_days = 1;    // max over trains of ceil(last arrival / 1440)
   size_t connection_count = 0;  // elementary stop-to-stop hops per service day pattern
+  // FNV-1a 64 of the source file bytes, as 16 lowercase hex digits. The API computes the same hash
+  // over its own copy, so it can refuse to render results computed from a different timetable.
+  std::string hash;
 
   const Stop& stop(const Train& t, uint32_t i) const { return stops[t.first_stop + i]; }
   // True if train `t` calls at `station` at a stop index in [lo, hi].
@@ -69,6 +72,9 @@ struct Timetable {
 
 // Loads data/processed/timetable.json (format "railway-timetable/v1").
 Timetable load_timetable_json(const std::string& path);
+
+// FNV-1a 64 of `bytes`, as 16 lowercase hex digits.
+std::string fnv1a64_hex(std::string_view bytes);
 
 // Parses the same format from an in-memory string (used by tests).
 Timetable parse_timetable_json(const std::string& text);
