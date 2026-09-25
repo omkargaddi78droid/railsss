@@ -27,3 +27,4 @@ deploy/.grafana-password
 deploy/terraform/**/.terraform/
 deploy/terraform/**/terraform.tfstate*
 deploy/terraform/**/terraform.tfvars
+/study-results-*.zip

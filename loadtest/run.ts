@@ -11,7 +11,8 @@
 //
 // KEY=VALUE: an experiment param (see --list), a k6 knob (DURATION, SEED, ...) or a deploy key
 // (deploy/variants/defaults.env); k6 and deploy keys override every variant's own value.
-// Flags: --variants a,b  --repeats n  --force (redo repeats already done)  --dry-run.
+// Flags: --variants a,b  --repeats n  --force (redo repeats already done)  --dry-run
+//        --suffix s (results as <variant>-<s>: a rerun with other overrides beside the original).
 // Env: SSH_KEY as for deploy/deploy.sh.
 //
 // Results: loadtest/results/<EXP>/<variant>/r<n>/
@@ -55,6 +56,7 @@ interface Options {
   repeats: number | null;
   force: boolean;
   dryRun: boolean;
+  suffix: string | null;
 }
 
 export function parseArgs(argv: string[]): Options | "list" {
@@ -64,11 +66,13 @@ export function parseArgs(argv: string[]): Options | "list" {
   let variants: string[] | null = null;
   let repeats: number | null = null;
   let force = false, dryRun = false;
+  let suffix: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--variants") variants = argv[++i].split(",").filter(Boolean);
     else if (a === "--repeats") repeats = Number.parseInt(argv[++i], 10);
     else if (a === "--force") force = true;
+    else if (a === "--suffix") suffix = argv[++i];
     else if (a === "--dry-run") dryRun = true;
     else if (/^[A-Z][A-Z0-9_]*=/.test(a)) pairs[a.slice(0, a.indexOf("="))] = a.slice(a.indexOf("=") + 1);
     else if (!a.startsWith("-") && !id) id = a;
@@ -76,6 +80,7 @@ export function parseArgs(argv: string[]): Options | "list" {
   }
   if (!id) throw new Error("usage: node loadtest/run.ts <EXP> [KEY=VALUE ...] [--variants a,b] [--repeats n] [--force] [--dry-run]");
   if (repeats !== null && !(repeats >= 1)) throw new Error("--repeats must be >= 1");
+  if (suffix !== null && !/^[a-z0-9_.-]+$/.test(suffix)) throw new Error("--suffix must match [a-z0-9_.-]+");
   const experiment = findExperiment(id);
   if (experiment.unsupported) throw new Error(`${experiment.id} cannot run yet: ${experiment.unsupported}`);
   const paramKeys = new Set(Object.keys(experiment.params ?? {}));
@@ -86,7 +91,7 @@ export function parseArgs(argv: string[]): Options | "list" {
     else if (DEPLOY_KEYS.has(k)) deploy[k] = v;
     else throw new Error(`${k} is not a param of ${experiment.id} (${[...paramKeys].join(", ") || "none"}), a k6 knob or a deploy key`);
   }
-  return { experiment, params: resolveParams(experiment, given), deploy, k6, variants, repeats, force, dryRun };
+  return { experiment, params: resolveParams(experiment, given), deploy, k6, variants, repeats, force, dryRun, suffix };
 }
 
 // The variants to run, with the command-line overrides applied.
@@ -98,7 +103,7 @@ export function expand(o: Options): Variant[] {
   }
   return all
     .filter((v) => !o.variants || o.variants.includes(v.name))
-    .map((v) => ({ ...v, deploy: { ...v.deploy, ...o.deploy }, k6: { ...v.k6, ...o.k6 } }));
+    .map((v) => ({ ...v, name: o.suffix ? `${v.name}-${o.suffix}` : v.name, deploy: { ...v.deploy, ...o.deploy }, k6: { ...v.k6, ...o.k6 } }));
 }
 
 const str = (r: Record<string, string | number> | undefined) => Object.fromEntries(Object.entries(r ?? {}).map(([k, v]) => [k, String(v)]));

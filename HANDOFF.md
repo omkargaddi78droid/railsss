@@ -7,10 +7,10 @@ Read this first in a new session.
 > credentials/terraform here). Next, in order:
 > 1. The AWS runs (the user runs them): `deploy.sh smoke` + `k6.sh smoke` first (first real test of `deploy/`),
 >    then `node loadtest/run.ts E1`; CAPACITY for the later experiments comes from E1 w16.
-> 2. T1 (runbook + LLM analysis prompt; user wants both the prompt and `loadtest/analyze.ts`), T2 frontend changes.
+> 2. Step 7 `loadtest/analyze.ts` (user wants it **and** the LLM prompt; T1 docs are DONE), T2 frontend changes.
 > Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
 > which is normal); the rehearsal stack is stopped. Step 5 is committed (`b9d5020`, pushed to `origin`,
-> github.com/omkargaddi78droid/railsss); Step 6 is committed and pushed.
+> github.com/omkargaddi78droid/railsss); Step 6 is committed and pushed (`0b33dfa`); T1 (session 8) is committed and pushed too.
 
 The original application plan is at
 `/home/omkar_gaddi/.claude/plans/pasted-content-id-27a5-you-are-nested-popcorn.md` (the original spec was pasted in the first session).
@@ -526,7 +526,20 @@ items) are not committed yet; ask the user before committing.
 - Docker here is Docker Desktop (VM): `network_mode: host` ports are not reachable from the laptop and bind
   mounts from /tmp are denied. Test host-network stacks from a `--network host` container, with files under the repo.
 
-## Added TODOs (user request, end of session 5; not started)
+## Added TODOs (user request, end of session 5)
+
+**T1 DONE (session 8):** `docs/experiment-runbook.md` (prereqs incl. vCPU quota, provisioning, sanity check,
+how run.ts works, result layout, E1–E18 in order with commands, time estimates (~24 h for everything × 3),
+what to look at / gather per experiment with the real Grafana panel names, reading CAPACITY, screenshots
+naming, teardown, packing, troubleshooting), `docs/analysis-llm-prompt.md` (system, zip layout, meta/summary/
+prom formats with every series, per-experiment questions, methods: validity, repeats, capacity from windowed
+`api_latency_p99`, knee, USL, fault timelines; deliverables: report, summary CSV, one pandas+numpy+matplotlib
+script writing SVG+PNG, README), and `loadtest/pack.ts` (zip with `manifest.json` from every meta.json,
+`attempts.jsonl`, `environment/`, `experiments/`, `screenshots/`, `notes.md`; tested on a fake result).
+`run.ts` gained `--suffix s` (results as `<variant>-<s>`, so a rerun with other overrides is neither skipped
+nor overwrites; used for E8/E17 capacity re-measurement). Open question left in the prompt: whether k6's
+remote-write trend gauges are cumulative; the prompt tells the LLM to check and prefer `api_latency_p99`.
+T2 is not started.
 
 Do these after the compute-only plan above, or earlier if the user asks. The user's wording is quoted where it matters.
 

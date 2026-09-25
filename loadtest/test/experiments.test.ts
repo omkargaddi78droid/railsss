@@ -89,6 +89,10 @@ test("command line: params, k6 knobs and deploy keys are told apart", () => {
   assert.equal(v.k6!.RATE, 210);
   assert.equal(v.k6!.DURATION, "1m");
   assert.equal(v.deploy!.LB_STRATEGY, "p2c");
+  const s = parseArgs(["E1", "--variants", "w16", "--suffix", "best", "NODE_CLUSTER=2"]);
+  if (s === "list") throw new Error();
+  assert.deepEqual(expand(s).map((x) => x.name), ["w16-best"]);
+  assert.throws(() => parseArgs(["E1", "--suffix", "Bad/x"]), /--suffix/);
   assert.throws(() => parseArgs(["E4"]), /needs CAPACITY/);
   assert.throws(() => parseArgs(["E1", "WORKRES=4"]), /not a param/);
   assert.throws(() => parseArgs(["E5"]), /cannot run yet/);

@@ -1,8 +1,8 @@
 # AWS deployment for the scaling study
 
 Everything needed to run the load-test study on 10 × m6i/m7i.large (see `docs/scaling-plan.md`).
-The full step-by-step experiment runbook comes later (`docs/experiment-runbook.md`); this file covers
-provisioning and deploying one variant.
+The step-by-step experiment runbook is `docs/experiment-runbook.md`; this file covers the tooling:
+provisioning, deploying one variant, and the experiment runner.
 
 ```
 k6 (second account) ──:80──> node09 nginx ──> node09 Node API ──> node01..node08 engines (2 per host, pinned)
