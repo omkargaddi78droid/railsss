@@ -3,6 +3,10 @@
 // cold) -> smoke (must pass) -> setup actions -> measured k6 run with timed fault actions -> restore
 // -> Prometheus range-query snapshots and container logs of the run's window.
 //
+// For the real study it runs on the k6 host, started from the laptop with deploy/controller.sh run
+// (inside tmux, so a dropped laptop connection does not stop it; results stay on the k6 host).
+// Running it straight from the laptop still works but dies with the laptop's connection.
+//
 //   node loadtest/run.ts --list
 //   node loadtest/run.ts E1                                   every variant, 3 repeats
 //   node loadtest/run.ts E4 CAPACITY=420 --variants p2c-uniform,round_robin-uniform --repeats 1
@@ -24,6 +28,7 @@
 // A repeat whose meta.json says "ok" is skipped on rerun, so an interrupted experiment resumes.
 import { spawn } from "node:child_process";
 import { appendFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { KNOWN as DEPLOY_KEYS, parseEnv } from "../deploy/render.ts";
@@ -292,7 +297,7 @@ async function runRepeat(o: Options, v: Variant, repeat: number, pulled: { done:
   const meta: Record<string, unknown> = {
     experiment: e.id, title: e.title, variant: v.name, repeat, testid, base: e.base ?? "baseline",
     deploy_overrides: str(v.deploy), scenario: v.scenario, k6_env: str(v.k6), params: o.params,
-    setup: v.setup ?? [], during: v.during ?? [],
+    setup: v.setup ?? [], during: v.during ?? [], controller: hostname(),
   };
   const finish = (status: Status, extra: Record<string, unknown> = {}) => {
     Object.assign(meta, extra, { status, finished_at: new Date().toISOString() });
@@ -391,7 +396,7 @@ function fakePlan(): Plan {
     private_ip: `10.40.1.${i + 1}`, roles: i < 8 ? ["worker"] : i === 8 ? ["api", "nginx"] : ["redis", "monitoring"] }));
   const workers = ["a", "b"].flatMap((s, j) => hosts.slice(0, 8).map((h) => ({ id: `${h.name}${s}`, host: h.name,
     url: `http://${h.private_ip}:${7070 + j * 10}`, admin: `http://${h.private_ip}:${7071 + j * 10}` })));
-  return { variant: "dry-run", git_commit: "dry-run", instance_type: "m6i.large", region: "dry-run", image_tag: "dry-run", hosts, workers,
+  return { variant: "dry-run", git_commit: "dry-run", instance_type: "m7i-flex.large", region: "dry-run", image_tag: "dry-run", hosts, workers,
     monitoring: { host: "node10", public_ip: "203.0.113.10" } };
 }
 

@@ -5,8 +5,11 @@ Read this first in a new session.
 > **START HERE (ninth session onward):** Step 6 tooling is **DONE** (session 8: `loadtest/run.ts` +
 > `loadtest/experiments.ts`, see "Step 6" below) but neither `deploy/` nor `run.ts` has run on AWS (no
 > credentials/terraform here). Next, in order:
-> 1. The AWS runs (the user runs them): `deploy.sh smoke` + `k6.sh smoke` first (first real test of `deploy/`),
->    then `node loadtest/run.ts E1`; CAPACITY for the later experiments comes from E1 w16.
+> 1. The AWS runs (the user runs them). **Experiments run on the k6 host, not the laptop** (session 9,
+>    see "Controller" below): `deploy/controller.sh setup`, then `controller.sh exec deploy/deploy.sh smoke`
+>    + `controller.sh exec env SEED=$RANDOM deploy/k6.sh smoke`, then `controller.sh run E1`; CAPACITY for
+>    the later experiments comes from E1 w16. User has the 10 study hosts + k6 host up (2026-09-30) but the
+>    new SG rule (SSH from `k6_cidr`) still needs `terraform apply` in `deploy/terraform/main`.
 > 2. Step 7 `loadtest/analyze.ts` (user wants it **and** the LLM prompt). T1 docs and T2 frontend are DONE.
 > Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
 > which is normal); the rehearsal stack is stopped. Step 5 is committed (`b9d5020`, pushed to `origin`,
@@ -202,7 +205,7 @@ Rerun with `cd api && npm run bench -- --mode cold|cached --connections N --url 
 
 Plan: `docs/scaling-plan.md` (copy of `/home/omkar_gaddi/.claude/plans/continue-eager-lobster.md`). The goal is learning through
 comparisons, not a production deploy. Budget:
-- 10 AWS m6i/m7i.large instances (2 vCPU = 1 physical core with HT, 8 GB).
+- 10 AWS m7i-flex.large instances (2 vCPU = 1 physical core with HT, 8 GB).
 - 8 instances × 2 single-core C++ workers = 16 workers.
 - 2 instances for nginx, Node, Redis, Mongo, Prometheus and Grafana.
 - k6 runs from one instance in another AWS account.
@@ -241,7 +244,7 @@ Build order and status:
 - Scope: learning-focused comparisons, many experiments. The final deployed version is not the goal.
 - Report: Markdown in the repo (`docs/load-test-report.md`, charts in `docs/load-test/`). No HTML artifact.
 - Allowed infra: k6, wrk2, nginx, Redis, Prometheus + Grafana.
-- AWS: exactly **10 instances, m6i.large or m7i.large** (x86, 2 vCPU = 1 physical core with HT, 8 GB), never more.
+- AWS: exactly **10 instances, m7i-flex.large** (x86, 2 vCPU = 1 physical core with HT, 8 GB), never more.
   - Baseline roles: 8 worker instances × 2 engine processes (1 per vCPU, cpuset pinned) = 16 workers.
   - Instance 9 is the gateway (nginx + Node API).
   - Instance 10 is data + observability (Redis, Mongo, Prometheus, Grafana).
@@ -406,12 +409,12 @@ The stale engine (7070) and API processes from session 4 were killed. The rehear
 
 ### Step 5 (session 7, 2026-09-26): `deploy/`, DONE (untested on AWS)
 - `deploy/terraform/main`: VPC 10.40.0.0/16, one public subnet in one AZ, cluster placement group, 10 ×
-  `instance_type` (validated: m6i.large|m7i.large, count ≤ 10), Ubuntu 24.04, gp3 30 GB, IMDSv2. SG: all
-  traffic within the SG; admin /32 → 22, 3000; k6 /32 → 80, 9090. ECR repos `railway-scaling/{engine,api}`
+  `instance_type` (validated: m7i-flex.large, count ≤ 10), Ubuntu 24.04, gp3 30 GB, IMDSv2. SG: all
+  traffic within the SG; admin /32 → 22, 3000; k6 /32 → 80, 9090, 22 (22 since session 9: controller). ECR repos `railway-scaling/{engine,api}`
   (`force_delete`), instance role with `AmazonEC2ContainerRegistryReadOnly`; `user_data.sh.tftpl` installs
   docker.io, docker-compose-v2, amazon-ecr-credential-helper (credHelpers → no AWS keys on hosts), sysctls,
   log rotation, then touches `/var/lib/railway-ready`. Region default `ap-south-1`, `aws_profile` variable.
-  `terraform.tfvars.example`. `deploy/terraform/k6`: own VPC 10.50/16, one c6i.xlarge (outside the 10-host
+  `terraform.tfvars.example`. `deploy/terraform/k6`: own VPC 10.50/16, one m7i-flex.large (outside the 10-host
   budget), Elastic IP (the main SG allows only it), docker + grafana/k6 pulled.
 - `deploy/inventory.ts`: `terraform output -json` (or `--main-output/--k6-output` files) → `deploy/inventory.json`
   (gitignored); default roles node01–08 worker, node09 api+nginx, node10 redis+monitoring; keeps edited
@@ -473,6 +476,23 @@ The stale engine (7070) and API processes from session 4 were killed. The rehear
 - Breakpoint defaults are guesses (E1 `MAX_RATE` = 50 × workers + 50, others 500–900, 5 min ramp); adjust with
   params after the first AWS runs. Expect the Node tier (NODE_CLUSTER=1) to cap E1 above ~8 workers (see
   session 6); E8 measures that.
+
+### Controller: experiments run from the k6 host (session 9, 2026-09-30), DONE (untested on AWS)
+User request: runs from the laptop died when the laptop's internet dropped. Now the k6 host is the
+controller. `deploy/controller.sh` (laptop side): `setup` (NodeSource Node 24, tmux, zip, jq, rsync on the k6
+host; generates `~/.ssh/id_ed25519` there and appends its pubkey to every study host's `authorized_keys`
+through the laptop's SSH, so the laptop key is never copied; pushes; copies the laptop's
+`loadtest/results/` over with `--ignore-existing` so resume works across sessions; checks SSH from the
+controller to every host), `push` (rsync `deploy/` without `terraform/`, `.known_hosts`, `.out/*` except
+`image-tag`, and `loadtest/` without `results/`, `local/`, `node_modules/` to `~/final_rail`; writes
+`deploy/.git-commit` (gitignored), which `render.ts` reads when `git describe` fails), `exec <cmd>`
+(foreground, `K6_LOCAL=1`), `run <run.ts args>` (tmux session `study`, `controller.sh _job` on the far side
+tees to `loadtest/results/controller.log`; refuses if already running), `status` (`TAIL=n`), `attach`,
+`pull [EXP]` (no delete), `shell`. `k6.sh` with `K6_LOCAL=1` runs `docker run grafana/k6` locally with
+`RESULT_DIR` mounted at `/out` (the laptop path now also mounts `/out`). Main SG gained 22 from `k6_cidr`.
+`run.ts` records `controller: hostname()` in `meta.json`. Pack on the laptop after `pull` (screenshots and
+notes live there). Verified offline: `bash -n`, push file set via local rsync, render without `.git`, tmux
+command quoting + `_job` with `--dry-run`, `k6.sh` local mode with a stub docker, 21 tests pass.
 
 ### Next steps, in order
 
@@ -634,7 +654,7 @@ Status: `MAX_QUEUE` default, keep-alive/thread decoupling and graceful shutdown 
 Decided, do not re-propose:
 - **Load tests never go through Next.js.** k6 → nginx (the single entry point) → Node API → workers. No frontend is deployed
   for the study (the local rehearsal compose already has none). The main app's Next.js proxy stays as it is.
-- No worker memory cap / `MALLOC_ARENA_MAX` work: memory is sufficient on m6i/m7i.large.
+- No worker memory cap / `MALLOC_ARENA_MAX` work: memory is sufficient on m7i-flex.large.
 - No rate limiting on the API.
 - No request-id propagation to the engine.
 - No frontend tests or CI for the frontend. The focus is the backend study.

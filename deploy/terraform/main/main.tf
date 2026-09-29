@@ -82,6 +82,13 @@ resource "aws_security_group" "node" {
     cidr_blocks = [var.admin_cidr]
   }
   ingress {
+    description = "SSH from the k6 instance (it runs loadtest/run.ts: deploys, fault actions, snapshots)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.k6_cidr]
+  }
+  ingress {
     description = "Grafana from the admin"
     from_port   = 3000
     to_port     = 3000
@@ -149,10 +156,7 @@ resource "aws_key_pair" "admin" {
   public_key = file(pathexpand(var.ssh_public_key_path))
 }
 
-resource "aws_placement_group" "cluster" {
-  name     = var.name
-  strategy = "cluster"
-}
+
 
 locals {
   registry = "${data.aws_caller_identity.me.account_id}.dkr.ecr.${var.region}.amazonaws.com"
@@ -165,7 +169,6 @@ resource "aws_instance" "node" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.node.id]
   key_name               = aws_key_pair.admin.key_name
-  placement_group        = aws_placement_group.cluster.id
   iam_instance_profile   = aws_iam_instance_profile.node.name
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     registry = local.registry

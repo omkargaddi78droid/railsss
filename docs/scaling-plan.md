@@ -8,13 +8,13 @@ controlled experiments. Examples: what happens with 4 workers, what happens with
 strategy works best. The result is a strong Markdown report in the repo.
 
 Fixed budget:
-- **10 × m6i/m7i.large** (2 vCPU = 1 physical core with HT, 8 GB) in the main account.
+- **10 × m7i-flex.large** (2 vCPU = 1 physical core with HT, 8 GB) in the main account.
 - k6 runs from one extra instance in another AWS account.
 
 Baseline split: 8 instances × 2 workers = 16 C++ workers, and 2 instances for nginx, Node, Redis,
 Mongo, Prometheus and Grafana. Provisioning uses Terraform plus deploy scripts.
 
-Note for the report: on m6i/m7i, the 2 workers on one instance are hyperthread siblings on one physical
+Note for the report: on m7i-flex, the 2 workers on one instance are hyperthread siblings on one physical
 core. "16 workers" is 8 physical cores. That is one of the experiments (E2).
 
 ## Target topology (baseline, roles are reassignable)
@@ -100,7 +100,9 @@ Roles live in one inventory file (`deploy/inventory.yml`: instance → role list
   metrics share one Grafana timeline. It also saves the `--summary-export` JSON.
 - `loadtest/run.sh <experiment>` (built as `loadtest/run.ts` + `loadtest/experiments.ts`): deploys the variant, runs smoke then the scenario, repeats 3 times, and
   stores the results in `loadtest/results/<exp>/<variant>/`. It also stores Prometheus range-query snapshots
-  (CPU per instance, per-worker RPS) for the report.
+  (CPU per instance, per-worker RPS) for the report. It runs on the k6 host inside tmux, started from the
+  laptop with `deploy/controller.sh run <exp>`, so a dropped laptop connection does not stop it; results
+  stay on the k6 host until `controller.sh pull`.
 - `loadtest/analyze.ts`: medians and spread, max RPS within SLO (p99 < 500 ms and errors < 0.1 %), the knee,
   a USL fit, and charts as SVG/PNG (read the dataviz skill first).
 

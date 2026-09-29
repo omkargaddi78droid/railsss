@@ -16,13 +16,13 @@ variable "aws_profile" {
 }
 
 variable "instance_type" {
-  description = "Study budget: m6i.large or m7i.large only (2 vCPU = 1 physical core with HT, 8 GB)."
+  description = "Study budget: m7i-flex.large only (2 vCPU = 1 physical core with HT, 8 GB)."
   type        = string
-  default     = "m6i.large"
+  default     = "m7i-flex.large"
 
   validation {
-    condition     = contains(["m6i.large", "m7i.large"], var.instance_type)
-    error_message = "The study is fixed to m6i.large or m7i.large."
+    condition     = contains(["m7i-flex.large"], var.instance_type)
+    error_message = "The study is fixed to m7i-flex.large."
   }
 }
 

@@ -16,7 +16,7 @@ function inventory(): Inventory {
     name: `node${String(i + 1).padStart(2, "0")}`, public_ip: `203.0.113.${i + 1}`, private_ip: `10.40.1.${i + 1}`,
     roles: (i < 8 ? ["worker"] : i === 8 ? ["api", "nginx"] : ["redis", "monitoring"]) as Inventory["hosts"][number]["roles"],
   }));
-  return { region: "test", instance_type: "m6i.large", registry: "r", repositories: { engine: "r/engine", api: "r/api" }, hosts };
+  return { region: "test", instance_type: "m7i-flex.large", registry: "r", repositories: { engine: "r/engine", api: "r/api" }, hosts };
 }
 
 const runnable = EXPERIMENTS.filter((e) => !e.unsupported);

@@ -38,9 +38,9 @@ variable "aws_profile" {
 }
 
 variable "instance_type" {
-  description = "Not part of the 10-instance budget; 4 vCPU is plenty for a few hundred req/s."
+  description = "Not part of the 10-instance budget; 2 vCPU / 8 GiB is plenty for a few hundred req/s."
   type        = string
-  default     = "c6i.xlarge"
+  default     = "m7i-flex.large"
 }
 
 variable "ssh_public_key_path" {

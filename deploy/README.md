@@ -1,14 +1,19 @@
 # AWS deployment for the scaling study
 
-Everything needed to run the load-test study on 10 × m6i/m7i.large (see `docs/scaling-plan.md`).
+Everything needed to run the load-test study on 10 × m7i-flex.large (see `docs/scaling-plan.md`).
 The step-by-step experiment runbook is `docs/experiment-runbook.md`; this file covers the tooling:
 provisioning, deploying one variant, and the experiment runner.
 
 ```
 k6 (second account) ──:80──> node09 nginx ──> node09 Node API ──> node01..node08 engines (2 per host, pinned)
-        └──── remote write :9090 ──> node10 Prometheus + Grafana (:3000), Redis
+        ├──── remote write :9090 ──> node10 Prometheus + Grafana (:3000), Redis
+        └──── SSH :22 ──> every host (the k6 host is also the controller that runs loadtest/run.ts)
 every host: node-exporter :9100, cAdvisor :8080 (VPC only)
 ```
+
+The laptop provisions (Terraform), builds images and drives the k6 host with `controller.sh`. The
+experiments run on the k6 host inside tmux, so the laptop's internet connection can drop mid-run; the
+results stay on the k6 host until `controller.sh pull`.
 
 ## Pieces
 
@@ -20,7 +25,8 @@ every host: node-exporter :9100, cAdvisor :8080 (VPC only)
 | `images.sh` | Builds the engine and API images and pushes them to ECR, tagged with the git commit |
 | `render.ts` | Inventory + variant → one compose file per host, Prometheus `file_sd` targets, `plan.json` |
 | `deploy.sh` | Renders, copies to `/opt/railway` on each host over SSH, starts services in phases, checks health |
-| `k6.sh` | Runs a k6 scenario on the k6 host against the gateway; the summary lands in `loadtest/results/aws/` |
+| `k6.sh` | Runs a k6 scenario on the k6 host against the gateway; the summary lands in `loadtest/results/aws/`. On the k6 host itself (`K6_LOCAL=1`, set by `controller.sh`) it runs k6 directly |
+| `controller.sh` | Laptop side of the controller: `setup` (tools + SSH key on the k6 host), `push` (code), `exec`, `run` (run.ts in tmux), `status`, `attach`, `pull` (results), `shell` |
 | `variants/*.env` | One file per configuration; `defaults.env` lists and explains every knob |
 | `prometheus/prometheus.yml` | Scrape config (targets come from the rendered `file_sd` files) |
 
@@ -31,7 +37,8 @@ API reads stations from the file baked into its image, as in the local rehearsal
 
 ## Prerequisites
 
-- Terraform ≥ 1.6, the AWS CLI (profiles for both accounts), Docker, Node 24, `jq`, `rsync`, `ssh`.
+- On the laptop: Terraform ≥ 1.6, the AWS CLI (profiles for both accounts), Docker, Node 24, `jq`, `rsync`,
+  `ssh`, `git`. The k6 host gets Node 24, tmux, `jq` and `rsync` from `controller.sh setup`.
 - An SSH key pair (`~/.ssh/id_ed25519.pub` by default; `SSH_KEY=/path/to/private` for the scripts).
 
 ## First run
@@ -45,13 +52,20 @@ terraform init && terraform apply
 cd ../main && cp terraform.tfvars.example terraform.tfvars              # admin_cidr, k6_cidr, aws_profile
 terraform init && terraform apply
 
-# 3. inventory, images, deploy (from the repo root)
+# 3. inventory, images, controller, deploy (from the repo root)
 node deploy/inventory.ts
 AWS_PROFILE=study deploy/images.sh
-deploy/deploy.sh smoke              # 2 workers: cheap sanity check
-SEED=$RANDOM deploy/k6.sh smoke
-deploy/deploy.sh baseline           # 16 workers
+deploy/controller.sh setup                                  # rerun whenever the study hosts are recreated
+deploy/controller.sh exec deploy/deploy.sh smoke            # 2 workers: cheap sanity check
+deploy/controller.sh exec env SEED=$RANDOM deploy/k6.sh smoke
+deploy/controller.sh exec deploy/deploy.sh baseline         # 16 workers
 ```
+
+`controller.sh` pushes `deploy/` (with `inventory.json`, the image tag and the Grafana password; not
+Terraform state) and `loadtest/` (not `results/`) to `~/final_rail` on the k6 host before every `exec` and
+`run`. The k6 host has its own SSH key, authorized on the study hosts by `setup`; the main stack's security
+group allows SSH from `k6_cidr` for it. The deployed state (`deploy/.out/current`) lives on the k6 host,
+so run `deploy.sh` and `k6.sh` there. Both still work straight from the laptop for debugging.
 
 `deploy.sh` prints the gateway URL and the Grafana URL and password (user `admin`; the password is
 kept in `deploy/.grafana-password`). Prometheus is not public: use
@@ -60,10 +74,10 @@ kept in `deploy/.grafana-password`). Prometheus is not public: use
 ## Variants
 
 ```bash
-deploy/deploy.sh baseline WORKERS=4                    # E1 point; spread = one per host first
-deploy/deploy.sh baseline WORKERS=8 WORKER_PLACEMENT=pack
-deploy/deploy.sh baseline LB_STRATEGY=p2c NODE_CLUSTER=2
-deploy/deploy.sh baseline PREWARM=true                  # runs the cache-warmer after deploy
+deploy/controller.sh exec deploy/deploy.sh baseline WORKERS=4          # E1 point; spread = one per host first
+deploy/controller.sh exec deploy/deploy.sh baseline WORKERS=8 WORKER_PLACEMENT=pack
+deploy/controller.sh exec deploy/deploy.sh baseline LB_STRATEGY=p2c NODE_CLUSTER=2
+deploy/controller.sh exec deploy/deploy.sh baseline PREWARM=true        # runs the cache-warmer after deploy
 ```
 
 Command-line `KEY=VALUE` pairs override the variant file, which overrides `defaults.env`; unknown keys
@@ -85,16 +99,22 @@ actions, runs the measured scenario with any timed fault actions (kill workers o
 restores the stack, then saves Prometheus range queries and container logs for the run's window.
 
 ```bash
-node loadtest/run.ts --list                         # experiments, questions, params
-node loadtest/run.ts E1 --dry-run                   # print every command without running anything
-node loadtest/run.ts E1                             # 6 variants x 3 repeats
-node loadtest/run.ts E4 CAPACITY=420                # CAPACITY = max RPS within SLO of E1 w16
-node loadtest/run.ts E10 CAPACITY=420 --variants redis-s1.1,prewarm-s1.1 --repeats 1
-node loadtest/run.ts E17 CAPACITY=420 LB_STRATEGY=p2c NODE_CLUSTER=2   # chosen config for every variant
+node loadtest/run.ts --list                                  # experiments, questions, params (offline)
+node loadtest/run.ts E1 --dry-run                            # print every command without running anything
+deploy/controller.sh run E1                                  # on the k6 host, in tmux: 6 variants x 3 repeats
+deploy/controller.sh run E4 CAPACITY=420                     # CAPACITY = max RPS within SLO of E1 w16
+deploy/controller.sh run E10 CAPACITY=420 --variants redis-s1.1,prewarm-s1.1 --repeats 1
+deploy/controller.sh run E17 CAPACITY=420 LB_STRATEGY=p2c NODE_CLUSTER=2   # chosen config for every variant
+deploy/controller.sh status                                  # running or idle, last log lines
+deploy/controller.sh attach                                  # live output (Ctrl-b d detaches)
+deploy/controller.sh pull                                    # results to the laptop's loadtest/results/
 ```
 
+`controller.sh run <args>` is `node loadtest/run.ts <args>` on the k6 host inside the tmux session `study`,
+logging to `loadtest/results/controller.log` there; one experiment at a time.
+
 `KEY=VALUE` is an experiment param, a k6 knob (`DURATION=1m` for a quick pass) or a deploy key; k6 and
-deploy keys override every variant. Results go to `loadtest/results/<EXP>/<variant>/r<n>/` (`summary.json`,
+deploy keys override every variant. Results go to `loadtest/results/<EXP>/<variant>/r<n>/` on the k6 host (`summary.json`,
 `meta.json`, `plan.json`, `variant.env`, `smoke/`, `prom/*.json`, `logs/<host>.log`, `deploy.log`, `k6.log`),
 plus `loadtest/results/manifest.jsonl` with one line per repeat. A repeat whose `meta.json` has status `ok`
 is skipped on a rerun, so an interrupted experiment resumes where it stopped (`--force` redoes it).
@@ -104,8 +124,10 @@ E5 (nginx straight to workers) and E6 (cost-split pools) are not runnable yet; `
 ## Teardown
 
 ```bash
+deploy/controller.sh pull                          # first: the results exist only on the k6 host
 terraform -chdir=deploy/terraform/main destroy     # also deletes the ECR images
 terraform -chdir=deploy/terraform/k6 destroy
 ```
 
-Destroy between study sessions: the hosts cost money while idle.
+Destroy between study sessions: the hosts cost money while idle. The laptop's `loadtest/results/` is the
+archive; `controller.sh setup` copies it to the next k6 host so finished repeats are still skipped.

@@ -129,7 +129,7 @@ Resulting split:
 
 ## What remains after this (from HANDOFF), in order
 1. **Step 5, `deploy/`:**
-   - Terraform: VPC, placement group, 10 × m6i/m7i.large, SGs, ECR.
+   - Terraform: VPC, placement group, 10 × m7i-flex.large, SGs, ECR.
    - Inventory, role compose files (worker, gateway, data, monitoring, exporters, plus the warmer on the gateway).
    - `deploy.sh <variant>` and Prometheus `file_sd`.
 2. **Step 6:** `loadtest/run.sh <exp> <variant>`, then the AWS runs: E1 first, then E2–E18.
@@ -224,7 +224,7 @@ To do (not started):
 Decided, do not re-propose:
 - **Load tests never go through Next.js.** k6 → nginx (the single entry point) → Node API → workers. No frontend is deployed
   for the study (the local rehearsal compose already has none). The main app's Next.js proxy stays as it is.
-- No worker memory cap / `MALLOC_ARENA_MAX` work: memory is sufficient on m6i/m7i.large.
+- No worker memory cap / `MALLOC_ARENA_MAX` work: memory is sufficient on m7i-flex.large.
 - No rate limiting on the API.
 - No request-id propagation to the engine.
 - No frontend tests or CI for the frontend. The focus is the backend study.

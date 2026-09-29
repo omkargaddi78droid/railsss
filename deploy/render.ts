@@ -327,8 +327,13 @@ function main() {
   }
   let commit = "unknown";
   try {
-    commit = execFileSync("git", ["-C", resolve(here, ".."), "describe", "--always", "--dirty"], { encoding: "utf8" }).trim();
-  } catch { /* not a git checkout */ }
+    commit = execFileSync("git", ["-C", resolve(here, ".."), "describe", "--always", "--dirty"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    // not a git checkout: on the k6 controller, deploy/controller.sh push leaves the laptop's commit here
+    const pushed = join(here, ".git-commit");
+    if (existsSync(pushed)) commit = readFileSync(pushed, "utf8").trim();
+  }
   writeFileSync(join(out, "plan.json"), JSON.stringify({ variant, git_commit: commit, instance_type: inv.instance_type, region: inv.region, ...plan }, null, 2) + "\n");
   writeFileSync(join(out, "variant.env"), Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n") + "\n");
   console.log(`rendered ${variant}: ${plan.workers.length} workers on ${new Set(plan.workers.map((w) => w.host)).size} hosts, ` +

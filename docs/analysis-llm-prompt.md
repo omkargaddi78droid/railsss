@@ -21,7 +21,7 @@ data does not support a conclusion, when repeats disagree, or when a run failed.
 - **Request path**: k6 load generator (separate AWS account, same region) → nginx on host `node09` → Node.js
   API (Express; `NODE_CLUSTER` processes) → a pool of C++ routing-engine workers on hosts `node01`–`node08`.
   Redis (result cache) and Prometheus + Grafana run on `node10`.
-- **Hosts**: 10 × AWS m6i.large or m7i.large (see `manifest.json` `environment`). Each has 2 vCPU, which is
+- **Hosts**: 10 × AWS m7i-flex.large (see `manifest.json` `environment`). Each has 2 vCPU, which is
   **1 physical core with hyperthreading**, and 8 GB. By default each worker host runs 2 engine processes,
   each pinned to one vCPU, so the two workers of a host are HT siblings. "16 workers" = 8 physical cores.
 - **Engine**: each `/route` request is a multi-criteria earliest-arrival search over a timetable (single
