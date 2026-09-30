@@ -136,6 +136,7 @@ int main() {
            {"load_ms", load_ms},
            {"requests", n},
            {"errors", errors.load()},
+           {"in_flight", metrics.in_flight.load()},
            {"avg_route_ms", n ? total_route_us.load() / 1000.0 / n : 0.0},
            {"config", rail::config_to_json(router.config())}});
   };
@@ -188,6 +189,9 @@ int main() {
     }
     ++requests;
     total_route_us += static_cast<uint64_t>(r.stats.total_ms * 1000);
+    // Other route requests running here right now, from every API process. The pool's
+    // least_reported strategy adds it to its own count, which only sees its own requests.
+    res.set_header("X-Inflight", std::to_string(metrics.in_flight.load(std::memory_order_relaxed) - 1));
     res.set_content(rail::compact_json(tt, q, r, worker_id), "application/json");
     res.status = 200;
     ++(r.status == rail::RouteStatus::Ok ? metrics.requests_ok : metrics.requests_no_route);

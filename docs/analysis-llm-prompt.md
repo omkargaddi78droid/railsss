@@ -30,7 +30,9 @@ data does not support a conclusion, when repeats disagree, or when a run failed.
   returns compact journeys (~9 KB); the API renders only the requested page (`PAGE_SIZE`, default 10).
 - **API dispatcher** (`EnginePool`): per-worker concurrency limit `ENGINE_CONCURRENCY` (default 2),
   load-balancing strategy `LB_STRATEGY` (round_robin | random | least_outstanding (default) | p2c |
-  consistent_hash), `RETRY_MAX`, hedging `HEDGE_AFTER_MS`, admission control `MAX_QUEUE` (`auto` = queue up
+  consistent_hash | least_reported), where every strategy except least_reported uses only the requests of
+  its own API process; least_reported adds the in-flight count each worker reports on its replies
+  (`X-Inflight`) and `/health`, minus that process's share, fading as exp(−age / `LB_REPORT_DECAY_MS`, 500 ms), `RETRY_MAX`, hedging `HEDGE_AFTER_MS`, admission control `MAX_QUEUE` (`auto` = queue up
   to one pool capacity, then answer 429; `-1` = unlimited), active health checks every 2 s, passive
   ejection after 3 failures, engine timeout 5 s.
 - **Cache**: Redis only (no in-process cache), key = query + engine config + timetable hash, TTL 1 h,
@@ -153,8 +155,24 @@ which one you used.
 ## 3. The experiments
 
 The exact variants are in each `experiment.json` and in `environment/experiments.ts`. `CAPACITY` (a param)
-is the operator's reading of the maximum RPS within the SLO of the 16-worker baseline. The fixed-rate
-experiments scale their load from it. The catalogue:
+is the operator's reading of the maximum RPS within the SLO of the layout the experiment ran on. The
+fixed-rate experiments scale their load from it.
+
+**Two layouts.** E1, E2, E3 and E14 ran on the default layout: 16 workers on node01–node08, one API process
+on node09 (CAPACITY there = `C16`, from E1 `w16`). From E8 on, the operator chose E8's `gw2-cluster2` for
+every other experiment: `API_HOSTS=2 NODE_CLUSTER=2`, so node08 and node09 each run 2 API processes and 14
+workers run on node01–node07 (CAPACITY = `C14`, from E8 `gw2-cluster2`). Check each run's
+`deploy_overrides`, `variant.env` and `plan.json` (worker count, API hosts) rather than assuming, and
+`notes.md` for the values used. Consequences to account for in the analysis:
+- Capacities of the two layouts are not directly comparable (16 vs 14 workers, 1 vs 4 API processes).
+- Each API process has its own pool: `ENGINE_CONCURRENCY` (2) and `MAX_QUEUE=auto` apply per process, so on
+  gw2 a worker can receive up to 8 concurrent requests (one vCPU, `ENGINE_THREADS=8`) and 429s start later
+  than on the default layout.
+- Every LB strategy except `least_reported` balances on its own process's requests only (E4).
+- E13 `kill8` on gw2 removes 8 of 14 workers (57 %), not half.
+- The E17 best config's capacity `C'` is `E8/gw2-cluster2-best`.
+
+The catalogue:
 
 - **E1 Worker count scaling**: 1, 2, 4, 8, 12, 16 workers ("spread": one per host before a second per host;
   from 9 workers on, HT siblings are used). Breakpoint (open model, ramp over 5 min). Max RPS within SLO per
@@ -162,13 +180,20 @@ experiments scale their load from it. The catalogue:
 - **E2 Placement/HT**: 8 workers as 1 per host on 8 hosts (sibling idle) vs 2 per host on 4 hosts (HT
   siblings) vs 1 unpinned per host. Breakpoint.
 - **E3 Threads per worker × pool concurrency**: `ENGINE_CONCURRENCY` 1/2 × `ENGINE_THREADS` 1/2/4. Breakpoint.
-- **E4 LB strategy**: 5 strategies × {uniform queries, heavy-tailed mix (`HEAVY_FRAC` of the slowest
-  queries)}, fixed load. Compare the tail (p99, p99.9, max) and the balance of outstanding work per worker.
+- **E4 LB strategy**: 6 strategies × {uniform queries, heavy-tailed mix (`HEAVY_FRAC` of the slowest
+  queries)}, fixed load, run on the API layout chosen in E8 (check `variant.env`). Compare the tail (p99,
+  p99.9, max) and the balance of outstanding work per worker (spread of `engine_in_flight` across workers).
+  With several API processes, does least_reported balance more evenly than least_outstanding and p2c, and
+  does that show in the tail? With one API process it should match least_outstanding.
 - **E5, E6**: not run (not implemented). Say so in the report.
 - **E7 Hedged requests**: `HEDGE_AFTER_MS` 0/100/250 on the heavy mix at fixed load. p99 gain vs extra engine
   load (pool events `hedge`, `hedge_win`; engine RPS vs client RPS).
-- **E8 Node tier**: 1 API process, a cluster of 2, 2 API hosts (14 workers), 2 API hosts × cluster 2.
-  Breakpoint. Where is the bottleneck (API container CPU vs worker CPU)? Amdahl.
+- **E8 Node tier**: 1, 2, 3 or 4 API hosts (16, 14, 12, 10 workers; variants `gw1`–`gw4`) × 1 API process or a
+  cluster of 2. Breakpoint. Where is the bottleneck (API container CPU vs worker CPU)? Amdahl. Which layout
+  gives the most capacity, and where does giving up worker hosts start to cost more than the extra API hosts
+  gain? The best layout was used for the later experiments: check each run's `variant.env` (`API_HOSTS`,
+  `NODE_CLUSTER`) and `plan.json` for the worker count, and do not compare capacities across layouts as if
+  they had 16 workers.
 - **E9 Payload**: page size 10 vs 50 × nginx gzip off/on. Breakpoint. Bytes per request (`data_received` /
   `http_reqs`), API CPU per request, capacity.
 - **E10 Cache**: no cache / Redis / Redis + warmer × zipf s = 0, 0.8, 1.1, 1.4, at fixed load. Hit ratio (from

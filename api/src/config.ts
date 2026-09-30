@@ -49,6 +49,7 @@ export interface Config {
   maxQueue: number | "auto";   // 429 beyond workers * concurrency + maxQueue in flight; -1 = unlimited, auto = one capacity
   failThreshold: number;
   healthIntervalMs: number;
+  lbReportDecayMs: number;     // least_reported: time constant of a worker's reported load
   mongoUri: string | null;
   mongoDb: string;
   stationsFile: string;
@@ -93,6 +94,7 @@ export function loadConfig(): Config {
     maxQueue: process.env.MAX_QUEUE === "auto" || !process.env.MAX_QUEUE ? "auto" : int("MAX_QUEUE", -1),
     failThreshold: Math.max(1, int("FAIL_THRESHOLD", 3)),
     healthIntervalMs: Math.max(0, int("HEALTH_INTERVAL_MS", 2000)),
+    lbReportDecayMs: Math.max(1, int("LB_REPORT_DECAY_MS", 500)),
     mongoUri: process.env.MONGODB_URI || null,
     mongoDb: process.env.MONGODB_DB || "railway",
     stationsFile: process.env.STATIONS_FILE || resolve(here, "../../data/processed/stations.json"),

@@ -48,7 +48,9 @@ Roles live in one inventory file (`deploy/inventory.yml`: instance → role list
 - New `enginePool.ts` that generalizes `engineClient.ts`:
   - Holds `ENGINE_URLS` (a list), with a per-worker semaphore reusing the existing FIFO `Semaphore`.
   - Active health checks eject and readmit workers.
-  - Pluggable `LB_STRATEGY`: `round_robin | random | least_outstanding | p2c | consistent_hash`.
+  - Pluggable `LB_STRATEGY`: `round_robin | random | least_outstanding | p2c | consistent_hash | least_reported`.
+    `least_reported` is least-outstanding plus the load each worker reports on its replies (`X-Inflight`,
+    and `in_flight` in `/health`), so several API processes see each other's requests (`LB_REPORT_DECAY_MS`).
   - Retry on a different worker, controlled by `RETRY_MAX`.
   - Optional hedging via `HEDGE_AFTER_MS`.
   - Admission control via `MAX_QUEUE`: requests beyond the limit get 429.
@@ -118,8 +120,8 @@ Worker-tier scaling:
   Also compare worker concurrency limit 1 vs 2 in the pool.
 
 Load balancing and dispatch:
-- **E4 LB strategy.** Round robin, random, least-outstanding, power-of-two-choices and consistent-hash, under
-  uniform and heavy workloads. Query cost varies 7 ms to 200+ ms, so smart balancing should matter.
+- **E4 LB strategy.** Round robin, random, least-outstanding, power-of-two-choices, consistent-hash and
+  least-reported (worker-reported load), under uniform and heavy workloads, on the API layout chosen in E8. Query cost varies 7 ms to 200+ ms, so smart balancing should matter.
 - **E5 Where to balance.** nginx upstream (least_conn) directly to workers vs the Node pool doing it.
 - **E6 Heterogeneous pools.** Split into a fast pool and a slow pool based on a predicted query cost,
   vs one shared pool. This reduces head-of-line blocking.
@@ -127,8 +129,10 @@ Load balancing and dispatch:
   p99 gain against the extra load.
 
 API tier and bottleneck shift:
-- **E8 Node tier scaling.** One Node process, cluster of 2, and 2 gateway instances (taking one worker
-  instance away). Find when the bottleneck moves from the workers to Node. Amdahl in practice.
+- **E8 Node tier scaling.** One Node process or a cluster of 2, on 1, 2, 3 or 4 API instances (each extra one
+  taken from the worker instances: 16, 14, 12, 10 workers). Find when the bottleneck moves from the workers
+  to Node. Amdahl in practice. The study continues on `gw2-cluster2` (2 API hosts × 2 processes, 14
+  workers), except E2, E3 and E14, which need the default layout.
 - **E9 Payload cost (compact engine + render page only).** Since the compute-only change
   (`docs/compute-only-plan.md`) the engine returns compact journeys (~9 KB instead of ~260 KB) and the API
   renders only the returned page. Compare the page size the client asks for (`limit` 10 vs 50, so 10 vs 50

@@ -83,6 +83,7 @@ services:
       ENGINE_TIMEOUT_MS: ${ENGINE_TIMEOUT_MS:-5000}
       ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-2}
       LB_STRATEGY: ${LB_STRATEGY:-least_outstanding}
+      LB_REPORT_DECAY_MS: ${LB_REPORT_DECAY_MS:-500}
       RETRY_MAX: ${RETRY_MAX:-1}
       HEDGE_AFTER_MS: ${HEDGE_AFTER_MS:-0}
       MAX_QUEUE: ${MAX_QUEUE:-auto}
@@ -118,6 +119,7 @@ services:
       ENGINE_URLS: ${ENGINE_URLS:-http://w1:7070,http://w2:7070,http://w3:7070,http://w4:7070}
       ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-2}
       LB_STRATEGY: ${LB_STRATEGY:-least_outstanding}
+      LB_REPORT_DECAY_MS: ${LB_REPORT_DECAY_MS:-500}
       CACHE_BACKEND: redis
       REDIS_URL: redis://redis:6379
       METRICS_PORT: 0

@@ -53,6 +53,7 @@ export async function createServices(config: Config, logger: Logger): Promise<Se
     maxQueue: config.maxQueue,
     failThreshold: config.failThreshold,
     healthIntervalMs: config.healthIntervalMs,
+    reportDecayMs: config.lbReportDecayMs,
   });
 
   let redis: RedisStore | null = null;

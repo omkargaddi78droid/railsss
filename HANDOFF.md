@@ -8,7 +8,14 @@ Read this first in a new session.
 > 1. The AWS runs (the user runs them). **Experiments run on the k6 host, not the laptop** (session 9,
 >    see "Controller" below): `deploy/controller.sh setup`, then `controller.sh exec deploy/deploy.sh smoke`
 >    + `controller.sh exec env SEED=$RANDOM deploy/k6.sh smoke`, then `controller.sh run E1`; CAPACITY for
->    the later experiments comes from E1 w16. User has the 10 study hosts + k6 host up (2026-09-30) but the
+>    the later experiments comes from E1 w16. **E1 is done (2026-09-30).** E8 (run next) has gw1–gw4 ×
+   cluster1/2 (1–4 API hosts, 16/14/12/10 workers). **User decision: after E8 the study runs on
+   `gw2-cluster2`** (`API_HOSTS=2 NODE_CLUSTER=2`, 14 workers), except E2, E3 and E14 (default layout).
+   CAPACITY: `C16` from E1 w16 (default layout), `C14` from E8 gw2-cluster2 (no E1 rerun); E17's best
+   config is measured as `E8 --variants gw2-cluster2 --suffix best`. The ordered commands are in
+   `docs/next_sequence_commands.md`; the reasons and caveats (per-process ENGINE_CONCURRENCY and MAX_QUEUE,
+   kill8 = 8 of 14) in the runbook's E8 section and the analysis prompt's "Two layouts". E4 now also has `least_reported` (a new strategy for several API processes) and should
+   run on the E8 layout; the engine and API images must be rebuilt (`deploy/images.sh`) for it. User has the 10 study hosts + k6 host up (2026-09-30) but the
 >    new SG rule (SSH from `k6_cidr`) still needs `terraform apply` in `deploy/terraform/main`.
 > 2. Step 7 `loadtest/analyze.ts` (user wants it **and** the LLM prompt). T1 docs and T2 frontend are DONE.
 > Current state: the main app stack is running (`docker compose ps`; the cache-warmer container has exited 0,
@@ -220,7 +227,9 @@ Build order and status:
    - Metrics: requests by outcome, in-flight, budget hits, labels popped, response bytes, route/handler histograms.
 2. **DONE: Node dispatcher** (`api/src/services/enginePool.ts`, replaces the single `HttpRoutingEngine` in `apiProcess.ts`).
    - `ENGINE_URLS` list, with a per-worker FIFO semaphore (`ENGINE_CONCURRENCY`).
-   - `LB_STRATEGY` round_robin|random|least_outstanding (ties rotate)|p2c|consistent_hash (100 vnodes on `source|destination`).
+   - `LB_STRATEGY` round_robin|random|least_outstanding (ties rotate)|p2c|consistent_hash (100 vnodes on `source|destination`)|least_reported
+     (session 10: own outstanding + other processes' load from the engine's `X-Inflight` reply header and `/health` `in_flight`,
+     decayed by `LB_REPORT_DECAY_MS`; loads within 0.1 tie and rotate; `/health` pool snapshot shows `reported_load`).
    - `RETRY_MAX`, `HEDGE_AFTER_MS` (the loser is aborted and not counted as a worker error), `MAX_QUEUE` → 429 `OVERLOADED` + `retry-after`.
    - Passive ejection after `FAIL_THRESHOLD` failures, and active `/health` every `HEALTH_INTERVAL_MS`.
    - `setWorkers()` supports dynamic membership, following the Redis set `ENGINE_REGISTRY_KEY`.
@@ -466,7 +475,7 @@ The stale engine (7070) and API processes from session 4 were killed. The rehear
   logs/, deploy.log, k6.log}`, `results/<EXP>/experiment.json`, `results/manifest.jsonl`. Repeats with
   `meta.json` status ok are skipped on rerun (resume). A failed deploy stops the run; a failed smoke skips the
   variant's remaining repeats. There is no `run.sh` wrapper (Node, like `deploy/*.ts`).
-- Also changed: `render.ts` `API_HOSTS=n` (E8; converts the last worker hosts to API hosts; exports `KNOWN`
+- Also changed: `render.ts` `API_HOSTS=n` (E8 uses 1–4; converts the last worker hosts to API hosts; exports `KNOWN`
   and `applyApiHosts`), `k6.sh` `RESULT_DIR`, k6 requests send `accept-encoding: gzip` (E9; nginx only
   compresses when `GZIP=on`).
 - Verified offline: `node --test loadtest/test/*.test.ts` (21 pass: every variant of every runnable experiment

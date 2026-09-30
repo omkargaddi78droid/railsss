@@ -76,7 +76,12 @@ export interface CompactJourney {
   legs: CompactLeg[];
 }
 
+// The engine's X-Inflight header (other route requests running on that worker when it answered).
+// A symbol key, so it never reaches JSON.stringify and the route cache.
+export const ENGINE_INFLIGHT = Symbol("engineInflight");
+
 export interface EngineResult {
+  [ENGINE_INFLIGHT]?: number;
   status: "ok" | "no_route";
   search_complete: boolean;
   worker?: string;           // WORKER_ID of the engine process that computed it
@@ -153,6 +158,8 @@ export async function postRoute(baseUrl: string, q: EngineQuery, signal: AbortSi
   const body = (await res.json().catch(() => null)) as any;
   if (res.status === 400) throw new EngineError(body?.error ?? "invalid query", 400, "invalid");
   if (!res.ok || !body) throw new EngineError(`routing engine error (HTTP ${res.status})`, 502, "unavailable");
+  const inflight = Number.parseInt(res.headers.get("x-inflight") ?? "", 10);
+  if (Number.isFinite(inflight)) body[ENGINE_INFLIGHT] = inflight;
   return body as EngineResult;
 }
 

@@ -53,7 +53,7 @@ for (const e of runnable) {
   });
 }
 
-test("E1 covers 1..16 workers; E8 gw2 takes one worker host away", () => {
+test("E1 covers 1..16 workers; E8 gw2/gw3/gw4 take one, two, three worker hosts away", () => {
   const w = (e: string, name: string) => {
     const o = parseArgs([e]);
     if (o === "list") throw new Error();
@@ -68,6 +68,12 @@ test("E1 covers 1..16 workers; E8 gw2 takes one worker host away", () => {
   assert.equal(gw2.workers.length, 14);
   assert.deepEqual(gw2.api.map((a) => a.host), ["node08", "node09"]);
   assert.equal(gw2.hosts.find((h) => h.name === "node08")!.phase, 2);
+  const gw3 = w("E8", "gw3-cluster1");
+  assert.equal(gw3.workers.length, 12);
+  assert.deepEqual(gw3.api.map((a) => a.host), ["node07", "node08", "node09"]);
+  const gw4 = w("E8", "gw4-cluster2");
+  assert.equal(gw4.workers.length, 10);
+  assert.deepEqual(gw4.api.map((a) => a.host), ["node06", "node07", "node08", "node09"]);
 });
 
 test("applyApiHosts leaves the inventory alone when unset and rejects impossible counts", () => {

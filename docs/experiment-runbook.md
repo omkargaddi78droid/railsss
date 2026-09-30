@@ -132,9 +132,11 @@ Exit code 99 from k6 means "thresholds crossed". That is the normal ending of a 
 and counts as `ok`. A failed deploy stops `run.ts`. Fix the cause and rerun the same `controller.sh run`
 command: finished repeats are skipped. The same applies if the k6 host itself was restarted.
 
-**Params.** `CAPACITY` is the maximum RPS within the SLO (p99 < 500 ms, errors < 0.1 %) of the baseline
-(16 workers, defaults). Read it from E1 `w16` (section 6). Every fixed-rate experiment scales its load from
-it. Other params have defaults (`--list`).
+**Params.** `CAPACITY` is the maximum RPS within the SLO (p99 < 500 ms, errors < 0.1 %) of the layout the
+experiment runs on (section 6). Every fixed-rate experiment scales its load from it. Other params have
+defaults (`--list`). Since the study continues on `gw2-cluster2` after E8 (section 5), there are two:
+`C16` from E1 `w16` (default layout: 16 workers, 1 API process) and `C14` from E8 `gw2-cluster2`
+(14 workers, 2 API hosts × 2 processes).
 
 **Overrides.** A deploy key (for example `NODE_CLUSTER=2`) or a k6 knob (for example `DURATION=1m`) on the
 command line applies to every variant. Use this for E17 (the chosen config), or for a quick trial. Do not
@@ -165,30 +167,36 @@ loadtest/results/
 
 ## 5. The experiments, in order
 
-Run E1 first: it gives `CAPACITY` for most of the others. The order after that is a suggestion. Times are
+Run E1 first: it gives `C16`. Then E8, which gives `C14`. The order after that is a suggestion. Times are
 per repeat, including the deploy (about 1–2 min each).
 
-Every command in the table is started with `deploy/controller.sh run` (for example
-`deploy/controller.sh run E4 CAPACITY=420`); the table shows only the arguments.
+**Study decision: after E8 the study runs on `gw2-cluster2`** (`API_HOSTS=2 NODE_CLUSTER=2`: node08 and
+node09 run the API with 2 processes each, 14 workers on node01–node07). Every run below marked "gw2" gets
+`API_HOSTS=2 NODE_CLUSTER=2` on the command line and `CAPACITY=<C14>`. E2, E3 and E14 stay on the default
+layout (reasons in the E8 section). The exact commands, in order, are in `docs/next_sequence_commands.md`.
 
-| Order | Exp | Arguments | Variants | Time (3 repeats) |
-|---|---|---|---|---|
-| 1 | E1 | `E1` | w1 w2 w4 w8 w12 w16 | ≈ 2 h |
-| 2 | E8 | `E8` | gw1/gw2 × cluster1/2 | ≈ 1.5 h |
-| 3 | E2 | `E2` | spread-8hosts, pack-4hosts, unpinned-8hosts | ≈ 1 h |
-| 4 | E3 | `E3` | c1/c2 × t1/t2/t4 | ≈ 2 h |
-| 5 | E4 | `E4 CAPACITY=<c>` | 5 LB strategies × uniform/heavy | ≈ 2.5 h |
-| 6 | E7 | `E7 CAPACITY=<c>` | hedge-off/100/250 | ≈ 45 min |
-| 7 | E9 | `E9` | page 10/50 × gzip off/on | ≈ 1.5 h |
-| 8 | E10 | `E10 CAPACITY=<c>` | nocache/redis/prewarm × s 0/0.8/1.1/1.4 | ≈ 3 h |
-| 9 | E11 | `E11 CAPACITY=<c>` | no-coalesce, coalesce, redis-lock | ≈ 25 min |
-| 10 | E15 | `E15` | K 10/20/50 × labels 200k/500k | ≈ 2 h |
-| 11 | E12 | `E12 CAPACITY=<c>` | 4 policies × 1.5×/2× | ≈ 1.5 h |
-| 12 | E13 | `E13 CAPACITY=<c>` | kill1, kill4, kill8, kill-redis | ≈ 1.5 h |
-| 13 | E14 | `E14 CAPACITY=<c>` | join, static8, static16 | ≈ 1 h |
-| 14 | E16 | `E16 CAPACITY=<c>` | open, closed | ≈ 30 min |
-| 15 | E18 | `E18 CAPACITY=<c>` | u20 … u100 | ≈ 1.5 h |
-| 16 | E17 | `E17 CAPACITY=<c'> <best config>` | spike (3×), soak (60 min, 1×) | ≈ 1.5 h |
+Every command in the table is started with `deploy/controller.sh run` (for example
+`deploy/controller.sh run E4 CAPACITY=420 API_HOSTS=2 NODE_CLUSTER=2`); the table shows only the arguments,
+with `<gw2>` standing for `API_HOSTS=2 NODE_CLUSTER=2`.
+
+| Order | Exp | Layout | Arguments | Variants | Time (3 repeats) |
+|---|---|---|---|---|---|
+| 1 | E1 | default | `E1` | w1 w2 w4 w8 w12 w16 | ≈ 2 h |
+| 2 | E8 | varies | `E8` | gw1/gw2/gw3/gw4 × cluster1/2 | ≈ 3 h |
+| 3 | E2 | default | `E2` | spread-8hosts, pack-4hosts, unpinned-8hosts | ≈ 1 h |
+| 4 | E3 | default | `E3` | c1/c2 × t1/t2/t4 | ≈ 2 h |
+| 5 | E4 | gw2 | `E4 CAPACITY=<C14> <gw2>` | 6 LB strategies × uniform/heavy | ≈ 3 h |
+| 6 | E7 | gw2 | `E7 CAPACITY=<C14> <gw2>` | hedge-off/100/250 | ≈ 45 min |
+| 7 | E9 | gw2 | `E9 MAX_RATE=<1.5 × C14> <gw2>` | page 10/50 × gzip off/on | ≈ 1.5 h |
+| 8 | E10 | gw2 | `E10 CAPACITY=<C14> <gw2>` | nocache/redis/prewarm × s 0/0.8/1.1/1.4 | ≈ 3 h |
+| 9 | E11 | gw2 | `E11 CAPACITY=<C14> <gw2>` | no-coalesce, coalesce, redis-lock | ≈ 25 min |
+| 10 | E15 | gw2 | `E15 MAX_RATE=<1.5 × C14> <gw2>` | K 10/20/50 × labels 200k/500k | ≈ 2 h |
+| 11 | E12 | gw2 | `E12 CAPACITY=<C14> <gw2>` | 4 policies × 1.5×/2× | ≈ 1.5 h |
+| 12 | E13 | gw2 | `E13 CAPACITY=<C14> <gw2>` | kill1, kill4, kill8, kill-redis | ≈ 1.5 h |
+| 13 | E14 | default | `E14 CAPACITY=<C16>` | join, static8, static16 | ≈ 1 h |
+| 14 | E16 | gw2 | `E16 CAPACITY=<C14> <gw2>` | open, closed | ≈ 30 min |
+| 15 | E18 | gw2 | `E18 CAPACITY=<C14> <gw2>` | u20 … u100 | ≈ 1.5 h |
+| 16 | E17 | gw2 + best | `E17 CAPACITY=<C'> <gw2> <best config>` | spike (3×), soak (60 min, 1×) | ≈ 1.5 h |
 
 E5 (nginx balancing straight to workers) and E6 (cost-split pools) are not runnable. The code they need
 does not exist; `--list` says why. Report them as not done.
@@ -206,26 +214,67 @@ and **gather** means what to add beyond what `run.ts` saves automatically.
   ramp ended at `MAX_RATE` without aborting, rerun that variant with `PER_WORKER_RPS=80 --force`.
 
 ### E8 Node tier scaling (breakpoint)
-- Look at: node09 CPU and the API container's CPU (`node09-api`) vs workers. `gw2-*` has 14 workers and 2
-  API hosts (node08 becomes an API host). Does the max RPS move once Node is no longer the wall?
-- Gather: screenshots of "CPU cores by container" for the gateway hosts. **If cluster2 or gw2 is clearly
-  better, consider using it for later runs** (e.g. `deploy/controller.sh run E4 CAPACITY=<c> NODE_CLUSTER=2`)
-  and write that down in `notes.md`. In that case, measure `CAPACITY` again with
-  `deploy/controller.sh run E1 --variants w16 --suffix cluster2 NODE_CLUSTER=2` (saved as `E1/w16-cluster2`).
+- Look at: node09 CPU and the API container's CPU (`node09-api`) vs workers. Each extra API host is taken
+  from the end of the worker hosts:
 
-### E2 Placement and hyperthreading (breakpoint, 8 workers)
+  | Variant | API hosts | Workers |
+  |---|---|---|
+  | `gw1-*` | node09 | 16 |
+  | `gw2-*` | node08, node09 | 14 |
+  | `gw3-*` | node07–node09 | 12 |
+  | `gw4-*` | node06–node09 | 10 |
+
+  Does the max RPS move once Node is no longer the wall, and where does losing workers start to cost more
+  than adding API hosts gains?
+- Gather: screenshots of "CPU cores by container" for the API hosts.
+- **The study continues on `gw2-cluster2`** (decided up front; write it in `notes.md`). After E8:
+  - `C14` = max RPS within the SLO of `E8/gw2-cluster2` (median of the repeats, section 6). That run *is*
+    the capacity measurement of the new layout: same deployment and workload (uniform) as E1 `w16` plus the
+    layout knobs, so no separate E1 rerun is needed. If its ramp reached `MAX_RATE` (900) without aborting,
+    rerun it with a higher ceiling: `E8 --variants gw2-cluster2 MAX_RATE=1400 --force`.
+  - Pass `API_HOSTS=2 NODE_CLUSTER=2` and `CAPACITY=<C14>` to every later run except E2, E3 and E14.
+  - Breakpoint experiments with a fixed `MAX_RATE` (E9, E15) get `MAX_RATE` ≈ 1.5 × `C14`, so the ramp
+    passes the knee.
+  - Stay on the default layout (no `API_HOSTS`/`NODE_CLUSTER`) for:
+    - E2: `unpinned-8hosts` needs 8 worker hosts (only 7 are left), and `spread-8hosts` would put HT
+      siblings on one host. E2 is about placement, not the API tier.
+    - E3: it varies `ENGINE_THREADS` down to 1. `ENGINE_CONCURRENCY` is per API process, so 4 processes
+      open up to 4 × c sockets per worker; with fewer engine threads than sockets, requests stall for the
+      keep-alive timeout. E3 is about one pool and one engine, so keep one API process.
+    - E14: it starts with 8 workers and adds the other 8, which needs 16 (with 14, `static8`'s registry
+      would name stopped workers). Use `C16`.
+  - E13 on gw2: `kill8` kills 8 of 14 workers (57 %), not half. Note it; expect 429s after the kill
+    (60 % load on 6 of 14 workers ≈ 140 % of what is left).
+- Points to keep in mind on gw2-cluster2 (for `notes.md` and the report):
+  - 4 API processes each have their own pool. `ENGINE_CONCURRENCY=2` is per process, so a worker can get up
+    to 8 concurrent requests (= `ENGINE_THREADS=8`) on one vCPU, where the default layout gave 2. Do not
+    raise `ENGINE_CONCURRENCY` without raising `ENGINE_THREADS` to at least 4 × it.
+  - `MAX_QUEUE=auto` is also per process (each allows 14 × 2 in flight + the same again queued), so 429s
+    start later than on the default layout (E12).
+  - `least_outstanding` (the default strategy) only sees each process's own requests. E4 compares it with
+    `least_reported`. Keep the default for the other experiments so they stay comparable; the E4 winner goes
+    into E17's best config.
+  - Capacities from different layouts are not directly comparable: 16 vs 14 workers.
+
+### E2 Placement and hyperthreading (breakpoint, 8 workers; default layout)
 - Look at: engine p50/p99 per worker. HT siblings (`pack-4hosts`) should be slower per request than one
   per host.
 - Gather: "Route time p50 / p99 per worker" screenshot per variant.
 
-### E3 Threads per worker and pool concurrency (breakpoint)
+### E3 Threads per worker and pool concurrency (breakpoint; default layout)
 - Look at: `c1-t1` should not stall (the admin port serves health checks). `c2-t1` queues inside the
   engine (the second request waits for the only thread). Compare engine in-flight vs API outstanding.
 - Gather: "In flight per worker" and "Pool in flight / queued per worker" screenshots.
 
 ### E4 LB strategy (fixed load, 70 % of CAPACITY; heavy mix at 70 % of CAPACITY/2 by default)
+- Run it with the E8 layout (`API_HOSTS`/`NODE_CLUSTER`). Each API process balances with only its own
+  counts, so with several processes `least_outstanding` and `p2c` see part of the load. `least_reported`
+  adds the load the workers report on every reply (`X-Inflight` header, `in_flight` in `/health`), fading
+  with `LB_REPORT_DECAY_MS` (default 500). With one API process (`gw1-cluster1`) it should match `least_outstanding`.
 - Look at: p99 and max per strategy, and outstanding per worker. `round_robin`/`random` pile up behind slow
-  queries on the heavy mix; `least_outstanding`/`p2c` should not.
+  queries on the heavy mix; `least_outstanding`/`p2c` should not. Compare the spread of engine in-flight
+  across workers ("In flight per worker") for `least_outstanding`, `p2c` and `least_reported`: the more even,
+  the more precise the balancing.
 - Gather: "Pool in flight / queued per worker" screenshot for the heavy mix of each strategy. If the heavy-mix
   runs are far from the SLO (all failing or all trivially fine), measure the heavy capacity with
   `DURATION=…` trials and pass `HEAVY_CAPACITY=<n>`.
@@ -262,12 +311,12 @@ and **gather** means what to add beyond what `run.ts` saves automatically.
 
 ### E13 Failure injection (fixed load 60 %, 5 min; kill at 60 s, restart at 180 s)
 - Look at: the time from the kill to the workers being marked unhealthy (`api_worker_healthy`), the error
-  burst, and the recovery after the restart. `kill8` removes half the capacity (expect 429s at 60 % load
-  → 120 % of what is left). `kill-redis` should fail open: more engine work, no errors.
+  burst, and the recovery after the restart. On gw2 (14 workers) `kill8` removes 57 % of the capacity
+  (expect 429s at 60 % load → about 140 % of what is left). `kill-redis` should fail open: more engine work, no errors.
 - Gather: "Worker health / errors" and "Failed rate / 429s / VUs" screenshots around t = 60 s and t = 180 s. The actual action
   times are in `meta.json` `events`.
 
-### E14 Elastic scaling (fixed load 70 %, 5 min; 8 workers, the other 8 join at 60 s)
+### E14 Elastic scaling (fixed load 70 %, 5 min; 8 workers, the other 8 join at 60 s; default layout, `C16`)
 - Look at: the worker set grows from 8 to 16 (panel "Route requests/s per worker"; the API's "engine worker
   set changed" log line is at info level, which the study's `LOG_LEVEL=warn` hides). Measure the time until p99
   is back under the SLO. `static8` and `static16` are the two bounds.
@@ -284,10 +333,11 @@ and **gather** means what to add beyond what `run.ts` saves automatically.
 - Gather: nothing extra (in-flight, RPS and latency series are saved).
 
 ### E17 Spike and soak on the chosen configuration
-- Choose the best config from E4/E7/E8/E10/E12, for example `LB_STRATEGY=p2c NODE_CLUSTER=2`. Measure its
-  capacity first with `deploy/controller.sh run E1 --variants w16 --suffix best <config>` (saved as
-  `E1/w16-best`, next to the baseline). Then run
-  `deploy/controller.sh run E17 CAPACITY=<c'> <config>`.
+- Choose the best config from E4/E7/E9/E10/E12 on top of gw2, for example
+  `API_HOSTS=2 NODE_CLUSTER=2 LB_STRATEGY=least_reported`. Measure its capacity `C'` first by rerunning the
+  E8 layout variant with the extra knobs: `deploy/controller.sh run E8 --variants gw2-cluster2 --suffix best
+  MAX_RATE=<1.5 × C14> <extra knobs>` (saved as `E8/gw2-cluster2-best`, next to `gw2-cluster2`, which gave
+  `C14`; the variant already sets the layout). Then run `deploy/controller.sh run E17 CAPACITY=<C'> <config>`.
 - Look at: spike: time after the spike until p99 and queue return to the pre-spike level. Soak: memory of
   engines, API and Redis over 60 min (flat, or growing?), and latency drift.
 - Gather: "Memory by container" screenshot over the full soak; the spike's latency panel.
@@ -348,7 +398,7 @@ study-results/
   environment/           inventory.json, git.txt, defaults.env, experiments.ts (the catalogue as run)
   experiments/<EXP>/     experiment.json and <variant>/r<n>/ exactly as in section 4
   screenshots/           your Grafana images
-  notes.md               your notes (decisions such as "E4 onwards with NODE_CLUSTER=2")
+  notes.md               your notes (decisions such as "after E8: gw2-cluster2, C14 = …")
 ```
 
 Give the zip plus `docs/analysis-llm-prompt.md` to the analysis LLM. Run `loadtest/analyze.ts` on the same

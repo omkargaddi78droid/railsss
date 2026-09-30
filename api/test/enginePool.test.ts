@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { EngineError, type EngineQuery, type EngineResult } from "../src/services/engineClient.ts";
+import { ENGINE_INFLIGHT, EngineError, type EngineQuery, type EngineResult } from "../src/services/engineClient.ts";
 import { EnginePool, type LbStrategy, type PoolOptions } from "../src/services/enginePool.ts";
 
 const URLS = ["http://w1", "http://w2", "http://w3", "http://w4"];
@@ -75,6 +75,34 @@ test("least_outstanding avoids a busy worker; p2c picks the less loaded of two",
   await p2.route(q());                             // a = w1 (busy), b = w2
   await busy;
   assert.deepEqual(fw2.log, ["http://w2", "http://w1"]);
+});
+
+test("least_reported avoids a worker that reports other processes' load until the report fades", async () => {
+  const fw = fakeWorkers();
+  const busy: Record<string, number> = { "http://w1": 3 };
+  let t = 0;
+  const p = pool("least_reported", fw, {
+    now: () => t, reportDecayMs: 100,
+    call: async (url, q, signal) => ({ ...(await fw.call(url, q, signal)), [ENGINE_INFLIGHT]: busy[url] ?? 0 }),
+  });
+  await p.route(q());                              // w1 (all idle), which reports 3 others running
+  for (let i = 0; i < 6; i++) await p.route(q());  // w2..w4 only
+  assert.deepEqual(fw.log.slice(1).includes("http://w1"), false);
+  t = 1000;                                        // the report has faded to ~0
+  delete busy["http://w1"];
+  for (let i = 0; i < 4; i++) await p.route(q());
+  assert.ok(fw.log.slice(7).includes("http://w1"));
+
+  // /health in_flight is a report too
+  const fw2 = fakeWorkers();
+  const p2 = pool("least_reported", fw2, {
+    now: () => 0,
+    healthCall: async (url) => ({ status: "ok", in_flight: url === "http://w2" ? 2 : 0 }),
+  });
+  await p2.checkHealth();
+  for (let i = 0; i < 6; i++) await p2.route(q());
+  assert.deepEqual(fw2.log.includes("http://w2"), false);
+  assert.equal(p2.snapshot().workers[1].reported_load, 2);
 });
 
 test("consistent_hash keeps a pair on one worker and moves only the ejected worker's keys", async () => {

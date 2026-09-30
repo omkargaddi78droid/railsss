@@ -3,7 +3,10 @@
 // Each worker gets its own FIFO semaphore (per-worker concurrency, which also caps the keep-alive
 // sockets per worker; see engineClient.ts). On top of that the pool adds the knobs the scaling study
 // compares:
-//   - LB_STRATEGY: round_robin | random | least_outstanding | p2c | consistent_hash
+//   - LB_STRATEGY: round_robin | random | least_outstanding | p2c | consistent_hash | least_reported
+//     least_outstanding and p2c only see this process's requests. With several API processes
+//     (NODE_CLUSTER, API_HOSTS) least_reported adds the load the workers report (X-Inflight on each
+//     reply, in_flight on /health) minus this process's share, fading with LB_REPORT_DECAY_MS.
 //   - RETRY_MAX: retry an "unavailable" failure on a different worker
 //   - HEDGE_AFTER_MS: send a duplicate to a second worker if the first has not answered by then
 //   - MAX_QUEUE: admission control; beyond capacity + MAX_QUEUE in-flight requests, reject with 429
@@ -14,9 +17,9 @@ import { lookup, Resolver } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
-import { EngineError, postRoute, Semaphore, type EngineQuery, type EngineResult, type RoutingEngine } from "./engineClient.ts";
+import { ENGINE_INFLIGHT, EngineError, postRoute, Semaphore, type EngineQuery, type EngineResult, type RoutingEngine } from "./engineClient.ts";
 
-export const LB_STRATEGIES = ["round_robin", "random", "least_outstanding", "p2c", "consistent_hash"] as const;
+export const LB_STRATEGIES = ["round_robin", "random", "least_outstanding", "p2c", "consistent_hash", "least_reported"] as const;
 export type LbStrategy = (typeof LB_STRATEGIES)[number];
 
 export type RouteCall = (baseUrl: string, q: EngineQuery, signal: AbortSignal) => Promise<EngineResult>;
@@ -32,7 +35,9 @@ export interface PoolOptions {
   maxQueue: number | "auto"; // -1 = unlimited; "auto" = one capacity (tracks worker membership)
   failThreshold: number;    // consecutive failures before ejection
   healthIntervalMs: number; // 0 = no background health checks
+  reportDecayMs?: number;   // least_reported: a report's weight is exp(-age / reportDecayMs)
   random?: () => number;
+  now?: () => number;
   call?: RouteCall;
   healthCall?: HealthCall;
 }
@@ -46,6 +51,8 @@ interface Worker {
   requests: number;
   errors: number;
   totalMs: number;
+  remote: number;           // least_reported: requests of other API processes at the last report
+  reportedAt: number;       // opts.now() of that report
 }
 
 export interface PoolCounters {
@@ -125,7 +132,7 @@ export class EnginePool implements RoutingEngine {
 
   constructor(options: PoolOptions) {
     const { urls, ...rest } = options;
-    this.opts = { random: Math.random, call: postRoute, healthCall: httpHealth, ...rest };
+    this.opts = { reportDecayMs: 500, random: Math.random, now: () => performance.now(), call: postRoute, healthCall: httpHealth, ...rest };
     this.setWorkers(urls);
     if (this.opts.healthIntervalMs > 0) {
       this.timer = setInterval(() => void this.checkHealth(), this.opts.healthIntervalMs);
@@ -140,7 +147,7 @@ export class EnginePool implements RoutingEngine {
       (url) =>
         old.get(url) ?? {
           url, slots: new Semaphore(this.opts.perWorkerConcurrency), outstanding: 0,
-          healthy: true, failures: 0, requests: 0, errors: 0, totalMs: 0,
+          healthy: true, failures: 0, requests: 0, errors: 0, totalMs: 0, remote: 0, reportedAt: -Infinity,
         },
     );
     this.ring = this.workers
@@ -167,9 +174,22 @@ export class EnginePool implements RoutingEngine {
       ...this.counters,
       workers: this.workers.map((w) => ({
         url: w.url, healthy: w.healthy, outstanding: w.outstanding, requests: w.requests, errors: w.errors,
+        reported_load: Math.round(this.load(w) * 100) / 100,
         avg_ms: w.requests ? Math.round((w.totalMs / w.requests) * 100) / 100 : 0,
       })),
     };
+  }
+
+  // least_reported: this process's outstanding requests plus the other processes' requests the
+  // worker last reported, weighted down as the report ages.
+  private load(w: Worker): number {
+    return w.outstanding + w.remote * Math.exp(-(this.opts.now() - w.reportedAt) / this.opts.reportDecayMs);
+  }
+
+  // inFlight: route requests running on the worker; own: how many of them are this process's.
+  private report(w: Worker, inFlight: number, own: number): void {
+    w.remote = Math.max(0, inFlight - own);
+    w.reportedAt = this.opts.now();
   }
 
   // Candidates: healthy workers not yet tried for this request; if none are healthy, fall back to
@@ -186,6 +206,13 @@ export class EnginePool implements RoutingEngine {
         // ties rotate, otherwise an idle pool would send everything to the first worker
         const min = Math.min(...c.map((w) => w.outstanding));
         const best = c.filter((w) => w.outstanding === min);
+        return best[this.rr++ % best.length];
+      }
+      case "least_reported": {
+        const loads = c.map((w) => this.load(w));
+        // within a tenth of a request counts as a tie, so a faded report does not pin the order
+        const min = Math.min(...loads);
+        const best = c.filter((_, i) => loads[i] <= min + 0.1);
         return best[this.rr++ % best.length];
       }
       case "p2c": {
@@ -229,6 +256,9 @@ export class EnginePool implements RoutingEngine {
       const t0 = performance.now();
       try {
         const r = await this.opts.call(w.url, q, signal);
+        // the count excludes this request; ours still hold their slots (this one included)
+        const inflight = r[ENGINE_INFLIGHT];
+        if (inflight !== undefined) this.report(w, inflight, Math.min(w.outstanding, this.opts.perWorkerConcurrency) - 1);
         w.requests++;
         w.totalMs += performance.now() - t0;
         w.failures = 0;
@@ -324,7 +354,8 @@ export class EnginePool implements RoutingEngine {
     await Promise.all(
       this.workers.map(async (w) => {
         try {
-          await this.opts.healthCall(w.url, AbortSignal.timeout(2000));
+          const h = await this.opts.healthCall(w.url, AbortSignal.timeout(2000));
+          if (typeof h.in_flight === "number") this.report(w, h.in_flight, Math.min(w.outstanding, this.opts.perWorkerConcurrency));
           if (!w.healthy) w.failures = 0;
           w.healthy = true;
         } catch {

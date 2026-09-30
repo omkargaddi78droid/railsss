@@ -49,7 +49,7 @@ type Named = { name: string; deploy: Knobs };
 type Tagged = { tag: string; deploy: Knobs };
 const rows = <T>(xs: T[]): T[] => xs;
 const rps = (x: number) => Math.max(1, Math.round(x));
-const LB = ["round_robin", "random", "least_outstanding", "p2c", "consistent_hash"];
+const LB = ["round_robin", "random", "least_outstanding", "p2c", "consistent_hash", "least_reported"];
 const REGISTRY = "engines";
 
 export const EXPERIMENTS: Experiment[] = [
@@ -91,7 +91,8 @@ export const EXPERIMENTS: Experiment[] = [
   {
     id: "E4",
     title: "Load-balancing strategy",
-    question: "Tail latency of each LB strategy at 70 % load, for uniform queries and a heavy-tailed mix.",
+    question: "Tail latency of each LB strategy at 70 % load, for uniform queries and a heavy-tailed mix. Run it on the " +
+      "layout chosen in E8: with several API processes, least_reported (worker-reported load) vs least_outstanding and p2c.",
     params: { CAPACITY: null, HEAVY_CAPACITY: 0, LOAD: 0.7, HEAVY_FRAC: 0.1 },
     variants: (p) => {
       const heavyCap = p.HEAVY_CAPACITY || p.CAPACITY / 2;
@@ -130,14 +131,15 @@ export const EXPERIMENTS: Experiment[] = [
   {
     id: "E8",
     title: "Node tier scaling",
-    question: "One API process, a cluster of 2, and 2 API hosts (one worker host fewer): when does Node stop being the wall?",
+    question: "1–4 API hosts (16/14/12/10 workers: each extra API host is one worker host fewer) × 1 or 2 API processes: " +
+      "when does Node stop being the wall, and which split of the hosts gives the most capacity?",
     params: { MAX_RATE: 900 },
-    variants: (p) => rows<Named>([
-      { name: "gw1-cluster1", deploy: { NODE_CLUSTER: 1 } },
-      { name: "gw1-cluster2", deploy: { NODE_CLUSTER: 2 } },
-      { name: "gw2-cluster1", deploy: { API_HOSTS: 2, NODE_CLUSTER: 1 } },
-      { name: "gw2-cluster2", deploy: { API_HOSTS: 2, NODE_CLUSTER: 2 } },
-    ]).map((v) => ({ ...v, scenario: "breakpoint" as const, k6: { START_RATE: 5, MAX_RATE: p.MAX_RATE, DURATION: "5m" } })),
+    variants: (p) => [1, 2, 3, 4].flatMap((gw) => [1, 2].map((c) => ({
+      name: `gw${gw}-cluster${c}`,
+      deploy: gw === 1 ? { NODE_CLUSTER: c } : { API_HOSTS: gw, NODE_CLUSTER: c },
+      scenario: "breakpoint" as const,
+      k6: { START_RATE: 5, MAX_RATE: p.MAX_RATE, DURATION: "5m" },
+    }))),
   },
   {
     id: "E9",
