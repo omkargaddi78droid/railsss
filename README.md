@@ -4,14 +4,30 @@ Given a source station, a destination, a date and an earliest start time, return
 journeys that arrive earliest** (the original specification asked for 20; K is configurable), across any number of transfers (internal cap 10), with a 30-minute
 minimum transfer, operating days and multi-day (overnight) schedules honored.
 
+```mermaid
+flowchart LR
+    Browser["👤 Browser"] -->|"HTTP :80"| FE["🌐 Next.js frontend<br/>:3000, the only published port"]
+    FE -->|"/api/* proxy"| API["⚙️ Node/Express API :4000<br/>validates, dispatches, renders"]
+    API -->|"POST /route"| ENG["⚡ C++ routing engine :7070<br/>compute only, compact journeys ~9 KB"]
+    API -->|"compact results, brotli"| REDIS[("⚡ Redis<br/>route cache")]
+    API -->|"station master at boot"| MONGO[("💾 MongoDB<br/>stations, trains, ingest reports")]
+    WARM["🔄 cache-warmer<br/>one-shot, API image"] -->|"busiest pairs"| ENG
+    WARM --> REDIS
+    SEED["📦 seed<br/>one-shot, API image"] --> MONGO
+
+    classDef edge fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    classDef svc fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef store fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    classDef job fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    class Browser,FE edge
+    class API,ENG svc
+    class REDIS,MONGO store
+    class WARM,SEED job
 ```
-browser ──► Next.js frontend (:3000, published) ──► Node/Express API (:4000) ──► C++ routing engine (:7070)
-                                                         │   (renders journeys)     (compute only: compact
-                                                         │                           journeys, ~9 KB)
-                                                         ├──► Redis (route cache of compact results)
-                                                         └──► MongoDB (station master, trains, ingest reports)
-cache-warmer (one-shot, same image as the API) ──► engine ──► Redis   (fills the cache on `docker compose up`)
-```
+
+The same API and engine images also run as a distributed system: one API tier dispatching to many
+single-core engine workers, deployed on 10 AWS hosts for a load-testing study. See
+[Scaling architecture](#scaling-architecture) and [Scaling study](#scaling-study-on-aws).
 
 - **routing-engine/**: C++20 long-running HTTP service that only computes. Loads the preprocessed timetable
   once and answers `POST /route` in single-digit to tens of milliseconds with compact journeys (timetable
@@ -25,13 +41,17 @@ cache-warmer (one-shot, same image as the API) ──► engine ──► Redis 
 - **scripts/**: Node/TypeScript preprocessing pipeline: validation, cleaning, quality report, and the
   routing-optimized timetable.
 - **MongoDB**: persistence for stations, trains and ingest reports. Hot routing never touches it.
+- **deploy/**: Terraform and scripts that put the API and engine workers on 10 AWS hosts.
+- **loadtest/**: k6 workloads and scenarios, a local rehearsal stack, the experiment runner and the
+  analysis script.
 
-Contents: [Quick start](#quick-start) · [Data](#data-findings-and-cleaning) ·
-[Temporal model](#temporal-model) · [Problem](#problem-formulation) · [Algorithm](#routing-algorithm) ·
-[Correctness](#correctness) · [Complexity](#complexity) · [API](#api) · [Frontend](#frontend) ·
-[MongoDB](#mongodb-schema) · [Configuration](#configuration) · [Deployment](#deployment) ·
-[Benchmarks](#benchmarks) · [Testing](#testing) · [Limitations](#known-limitations) ·
-[Future work](#future-work)
+Contents: [Quick start](#quick-start) · [Repository layout](#repository-layout) ·
+[Data](#data-findings-and-cleaning) · [Temporal model](#temporal-model) · [Problem](#problem-formulation) ·
+[Algorithm](#routing-algorithm) · [Correctness](#correctness) · [Complexity](#complexity) · [API](#api) ·
+[Frontend](#frontend) · [MongoDB](#mongodb-schema) · [Scaling architecture](#scaling-architecture) ·
+[Configuration](#configuration) · [Deployment](#deployment) · [Benchmarks](#benchmarks) ·
+[Load testing](#load-testing) · [Scaling study](#scaling-study-on-aws) · [Testing](#testing) ·
+[Limitations](#known-limitations) · [Future work](#future-work)
 
 ---
 
@@ -76,6 +96,23 @@ ENGINE_URL=http://127.0.0.1:7070 npm start                                      
 cd frontend && npm ci && npx next build
 API_INTERNAL_URL=http://127.0.0.1:4000 npx next start -p 3000
 ```
+
+---
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `backend/train_data/` | Raw input: 1,725 JSON files, one train each |
+| `scripts/` | `preprocess.ts`, `geocode.ts`, the pure rules in `lib/`, and their tests |
+| `data/` | `external/` (vendored station coordinates), `reports/` (generated quality and geocode reports), `processed/` (generated, not committed) |
+| `routing-engine/` | `src/` (timetable, router, compact JSON, HTTP server, metrics), `tests/`, `bench/`, vendored `third_party/` |
+| `api/` | `src/` (Express app, services, cluster entry point, warmer, seed), `test/`, `bench/` |
+| `frontend/` | Next.js app: `app/`, `components/`, `lib/`, `public/station-coords.json` |
+| `docker-compose.yml` | The single-host application stack |
+| `deploy/` | Terraform (`terraform/main`, `terraform/k6`), `render.ts`, `deploy.sh`, `images.sh`, `k6.sh`, `controller.sh`, `variants/` |
+| `loadtest/` | `k6/` scenarios, `local/` rehearsal stack, `experiments.ts`, `run.ts`, `analyze.ts`, `pack.ts`, Grafana and Prometheus config |
+| `docs/` | Scaling plan, experiment runbook, command sequence, analysis prompt, the load-test report and generated results |
 
 ---
 
@@ -126,6 +163,34 @@ rejected.
    - `stations.json`: the station master with `train_count`.
    - `trains.json`: full normalized records for MongoDB.
    - The quality report.
+
+```mermaid
+flowchart TD
+    RAW["📦 backend/train_data/*.json<br/>1,725 train records"] --> VAL["Validate schema and time formats"]
+    VAL --> NORM["Normalize: trim, recover codes,<br/>canonical station names"]
+    NORM --> ABS["Absolute times from day_of_journey<br/>(overnight rule)"]
+    ABS --> MONO{"Times monotone<br/>and record usable?"}
+    MONO -->|"no: policy strict fails,<br/>correct or skip rejects"| REJ["❌ Rejected record<br/>listed in the report"]
+    MONO -->|"yes"| EMIT["Emit"]
+    EMIT --> TT["timetable.json<br/>engine and API renderer"]
+    EMIT --> ST["stations.json<br/>station master"]
+    EMIT --> TR["trains.json<br/>MongoDB seed"]
+    EMIT --> QR["quality-report.md / .json"]
+    ST --> GEO["geocode.ts<br/>join datameet coordinates,<br/>outlier guard, interpolation"]
+    TT --> GEO
+    GEO --> COORD["frontend/public/station-coords.json"]
+
+    classDef input fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    classDef step fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    classDef decision fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    classDef output fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef error fill:#FFB6C1,stroke:#DC143C,stroke-width:2px,color:#000
+    class RAW input
+    class VAL,NORM,ABS,EMIT,GEO step
+    class MONO decision
+    class TT,ST,TR,QR,COORD output
+    class REJ error
+```
 
 ---
 
@@ -192,6 +257,34 @@ Why not the textbook algorithms:
 
 The engine combines an exact **backward profile** with **best-first K-best enumeration**:
 
+```mermaid
+flowchart TD
+    Q(["🚀 Query: source, destination, date, time"]) --> PAT["Pick the weekday pattern<br/>(precomputed at startup)"]
+    PAT --> PROF["Backward connection scan from the destination<br/>gives a lower bound for every (instance, stop) and station"]
+    PROF --> SEED["Push a label for every train leaving<br/>the source in the first-departure window"]
+    SEED --> POP{"Heap empty, K journeys accepted,<br/>or MAX_LABELS reached?"}
+    POP -->|"yes"| OUT(["✅ Top-K in rank order<br/>search_complete = false if the budget stopped it"])
+    POP -->|"no"| TOP["Pop the label with the smallest key"]
+    TOP --> DONE{"Journey complete?"}
+    DONE -->|"no"| EXP["Expand: ride on, alight,<br/>or board after the minimum transfer"]
+    EXP --> PRUNE["Drop successors that touch a station twice, reuse a train,<br/>exceed the horizon or transfer cap, or fail stay-on"]
+    PRUNE --> POP
+    DONE -->|"yes"| CHECK{"New signature and<br/>not dominated?"}
+    CHECK -->|"yes"| ACC["Accept as the next-ranked journey"]
+    CHECK -->|"no"| DROP["❌ Discard"]
+    ACC --> POP
+    DROP --> POP
+
+    classDef step fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    classDef decision fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    classDef good fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef bad fill:#FFB6C1,stroke:#DC143C,stroke-width:2px,color:#000
+    class PAT,PROF,SEED,TOP,EXP,PRUNE step
+    class POP,DONE,CHECK decision
+    class Q,OUT,ACC good
+    class DROP bad
+```
+
 ### 1. Per-weekday precomputed patterns (at startup)
 
 For each of the 7 weekdays, the engine precomputes:
@@ -232,6 +325,20 @@ arena with parent pointers. The priority key is
 - The parent chain is per leg, so checking "station already touched" walks at most about 11 legs. It
   uses a 64-bit bloom filter plus `train_calls_at` binary searches.
 - A label whose bound is infinite, exceeds the horizon, or exceeds the transfer cap is never created.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Root
+    Root --> Onboard: board a train leaving the source in the window
+    Onboard --> Onboard: ride to the next stop
+    Onboard --> AtStation: alight (not at the destination)
+    AtStation --> Onboard: board a train departing 30 min or more later
+    Onboard --> Completed: alight at the destination
+    Completed --> Accepted: new signature, not dominated
+    Completed --> Discarded: duplicate signature or dominated
+    Accepted --> [*]
+    Discarded --> [*]
+```
 
 When a completed journey is popped, it is final (see Correctness). It is dropped if its signature was
 already emitted or if a dominance rule applies. The search stops after K accepted completions.
@@ -379,9 +486,106 @@ unfiltered ranking, so they stay stable while filters change.
 | Malformed JSON | 400 | `INVALID_JSON` |
 | No route | 200 | `routes: []`, `message: "No valid journey found for the specified date and time."` |
 | Filters exclude everything | 200 | `routes: []`, `message: "No journey matches the selected filters."` |
-| Engine down, timed out or saturated | 503 | `ENGINE_UNAVAILABLE` |
+| Engine down or timed out | 503 | `ENGINE_UNAVAILABLE` |
+| More requests waiting than `MAX_QUEUE` allows | 429 | `OVERLOADED`, with `retry-after: 1` |
+
+`meta.worker` names the engine worker that computed the result (null on a cache hit).
+
+A search from the browser to the engine and back:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 👤 Browser
+    participant FE as Next.js proxy
+    participant API as Express app
+    participant RS as RouteService
+    participant RC as RouteCache
+    participant R as Redis
+    participant P as EnginePool
+    participant E as Engine worker
+
+    U->>FE: POST /api/routes
+    FE->>API: POST /api/routes (x-request-id)
+    API->>API: zod validation, station lookup
+    API->>RS: search(query, filters, page)
+    RS->>RC: getOrCompute(key)
+    RC->>R: GET route key
+    alt cached
+        R-->>RC: compact result (brotli)
+    else not cached
+        R-->>RC: nil
+        RC->>P: route(query, top 50)
+        P->>E: POST /route
+        E-->>P: compact journeys, about 9 KB
+        P-->>RC: result
+        RC->>R: SET route key with TTL
+    end
+    RC-->>RS: compact result, cached flag
+    RS->>RS: check timetable hash, filter, slice the page
+    RS->>RS: render only that page (names, stops, datetimes)
+    RS-->>API: routes, pagination, meta
+    API-->>FE: 200 JSON
+    FE-->>U: 200 JSON
+```
 
 ### API internals
+
+`src/bootstrap.ts` wires the same services for the API process and the cache-warmer, so both build the same
+cache keys:
+
+```mermaid
+classDiagram
+    class RouteService {
+        +configHash
+        +search(query) routes
+        +warm(query) cached
+    }
+    class RouteCache {
+        +hits
+        +misses
+        +coalesced
+        +lockWaits
+        +getOrCompute(key, compute)
+    }
+    class RedisStore {
+        +get(key)
+        +set(key, value, ttl)
+        +lock(key, ttl)
+        +members(registryKey)
+    }
+    class EnginePool {
+        +counters
+        +route(query)
+        +health()
+        +checkHealth()
+        +setWorkers(urls)
+        +snapshot()
+    }
+    class JourneyRenderer {
+        +hash
+        +check(engineHash)
+        +render(journey, rank, searchMinute)
+    }
+    class StationService {
+        +size
+        +source
+        +search(prefix, limit)
+        +get(code)
+    }
+    class RoutingEngine {
+        <<interface>>
+        +route(query)
+        +health()
+    }
+    RouteService --> RouteCache : caches compact results
+    RouteService --> RoutingEngine : computes on a miss
+    RouteService --> JourneyRenderer : renders the page
+    RouteService --> StationService : resolves codes
+    RouteCache --> RedisStore : the only store
+    EnginePool ..|> RoutingEngine
+    EnginePool --> RedisStore : worker registry (optional)
+```
 
 - **Compact engine results, rendered in the API**: the engine returns each journey as
   `[train_idx, board_stop, alight_stop, start_day]` legs plus absolute minutes (about 9 KB for 50 journeys,
@@ -402,10 +606,39 @@ unfiltered ranking, so they stay stable while filters change.
   at every hour of today (the frontend's default time is the current hour, and the current hour goes first)
   with `PREWARM_CONCURRENCY` searches at a time, logs its stats and exits. A Redis lock lets one warmer run at
   a time; entries already in Redis are skipped, so re-running it is cheap (`docker compose up cache-warmer`).
-- **Engine client**: keep-alive `fetch`, a timeout that covers queueing as well as the call, and a FIFO
-  semaphore (`ENGINE_CONCURRENCY`). The semaphore matters because cpp-httplib holds a worker thread for
-  each open keep-alive connection. Without it, a burst opens more sockets than the engine has threads, and
-  the extra requests stall for the 5 s keep-alive timeout. This was found by the load test.
+  With several API processes, an optional Redis lock (`REDIS_LOCK_MS`) makes the other processes wait for
+  the one that is already computing a key:
+
+  ```mermaid
+  sequenceDiagram
+      participant A as Request A
+      participant B as Request B (same query)
+      participant C as RouteCache
+      participant R as Redis
+      participant P as EnginePool
+
+      A->>C: getOrCompute(key)
+      C->>R: GET key
+      R-->>C: nil
+      opt REDIS_LOCK_MS > 0
+          C->>R: SET lock NX PX
+          R-->>C: acquired (otherwise poll GET until the value appears)
+      end
+      C->>P: route(query)
+      B->>C: getOrCompute(key)
+      Note over B,C: same process: B shares A's pending promise (coalesced)
+      P-->>C: result
+      C->>R: SET key (brotli, TTL)
+      C-->>A: value, cached = false
+      C-->>B: value, cached = false
+      Note over C,R: any Redis error is counted and ignored (fail open)
+  ```
+- **Engine pool** (`src/services/enginePool.ts`): dispatches each search to one of the engine workers. One
+  worker is simply a pool of one. Keep-alive `fetch`, a timeout that covers queueing, retries and hedges, and
+  a FIFO semaphore per worker (`ENGINE_CONCURRENCY`). The semaphore matters because cpp-httplib holds a
+  worker thread for each open keep-alive connection. Without it, a burst opens more sockets than the engine
+  has threads, and the extra requests stall for the 5 s keep-alive timeout. This was found by the load
+  test. See [Scaling architecture](#scaling-architecture).
 - **Filters**: a registry in `src/services/filters.ts`. A new filter is one entry: a schema field plus a
   predicate.
 - **Logging**: structured pino JSON with a per-request `req_id`, which is propagated from the frontend
@@ -427,22 +660,17 @@ back button.
 - `components/SummaryStrip`: best-in-class tiles (earliest arrival, shortest trip, fewest changes, least
   waiting) over the filtered list; a click selects that journey. `components/SortBar` reorders the top 50
   by the same keys; the engine rank stays visible as `#n`.
-- `components/FilterPanel`: every predicate lives in a registry in `lib/filters.ts`, and options are
-  derived from the current results with a journey count each:
-  - direct only, max transfers, max duration (a slider up to 3000 min);
-  - **transfer stations**: tick stations and choose *Only via* (every change is at a ticked station;
-    direct journeys still pass), *Must via* (at least one change is) or *Avoid* (none is);
-  - train types allowed on every leg;
-  - departure and arrival time windows (night, morning, afternoon, evening);
-  - minimum time to change trains, and the longest single wait;
-  - excluded trains (added from a card).
+- `components/FilterBar`: a one-row bar above the list. Every predicate lives in a registry in
+  `lib/filters.ts`: direct only, maximum changes, minimum time to change trains, longest single wait, and
+  excluded trains (added from a card).
 
   The frontend fetches the top 50 once (`MAX_RESULTS` in `lib/api.ts`), then filters, sorts and
   paginates (10 per page) on the client with no extra requests. Filters only narrow the top 50; they do not search for journeys outside it.
 - `components/RouteMap` (Leaflet, loaded client-side only through `MapPanel`): the selected journey is
-  drawn through every stop of every leg, one colour per leg (matching the card), with transfer and
-  endpoint markers and stop tooltips; the other journeys are faint dashed lines, and hovering a card
-  lifts its line. Before a search it pins the picked stations. Tiles are Esri's keyless grey canvas
+  drawn as a smoothed line through every stop of every leg, one colour per leg (matching the card), with
+  a casing, an animated dash in the direction of travel, ringed halting stops, two-colour transfer
+  markers and stop tooltips; the other journeys are faint dotted lines, and hovering a card or a line
+  lifts it. Before a search it pins the picked stations. Tiles are Esri's keyless grey canvas
   (light and dark variants), the only external request.
 - **Station coordinates** come from the [datameet/railways](https://github.com/datameet/railways)
   station list (CC0, vendored at `data/external/datameet-stations.json`). `scripts/geocode.ts` joins it
@@ -453,10 +681,38 @@ back button.
   (about 68 KB), is committed and served statically, so the map never waits on the API.
 - `app/api/[...path]/route.ts`: a same-origin runtime proxy to `API_INTERNAL_URL`. The browser never talks
   to the API directly (no CORS setup is needed), and one image works in every environment.
-- Layout: filters, list and a sticky map side by side from 1280 px; below that the filters open as a
-  drawer, and below 1024 px a floating List / Map switch replaces the map column.
+- Layout: two equal columns (list and a sticky map) from 1024 px; below that a floating List / Map switch
+  replaces the map column.
 - Supports dark mode via `prefers-color-scheme`, including the map tiles. The standalone output is the
   Docker runtime image.
+
+```mermaid
+flowchart TD
+    URL["🔗 URL state<br/>from, to, date, time, filters, sort"] <--> PAGE["app/page.tsx<br/>search state, selection, hover, page"]
+    PAGE --> SF["SearchForm"]
+    SF --> SP["StationPicker<br/>debounced autocomplete"]
+    PAGE --> SS["SummaryStrip"]
+    PAGE --> FB["FilterBar"]
+    PAGE --> SB["SortBar"]
+    PAGE --> JC["JourneyCard × 10 per page"]
+    PAGE --> MP["MapPanel (client only)"]
+    MP --> RM["RouteMap (Leaflet)"]
+    SP -->|"GET /api/stations"| PROXY["app/api/[...path]/route.ts<br/>same-origin proxy"]
+    PAGE -->|"POST /api/routes, top 50 once"| PROXY
+    PROXY --> API["⚙️ Node API"]
+    FB --> LIB["lib/filters.ts<br/>predicates, sorts, URL keys"]
+    SB --> LIB
+    RM --> COORD["public/station-coords.json"]
+
+    classDef state fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    classDef comp fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    classDef ext fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef data fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    class URL,PAGE state
+    class SF,SP,SS,FB,SB,JC,MP,RM comp
+    class PROXY,API ext
+    class LIB,COORD data
+```
 
 ---
 
@@ -471,9 +727,149 @@ and removes stale documents, so it can be re-run safely.
 | `trains` | `{ number, name, type, route_id, operating_days, classes_available, stops[{ code, name, seq, arr, dep, day, distance_km }], … }` | `number` unique, `stops.code`, `type` |
 | `ingest_reports` | `{ generated_at, raw, cleaned, issue_counts }` | `generated_at` |
 
+The collections are not linked by foreign keys; a train's stops embed the station code:
+
+```mermaid
+erDiagram
+    STATIONS {
+        string code PK
+        string name
+        array all_known_names
+        int train_count
+        date updated_at
+    }
+    TRAINS {
+        string number PK
+        string name
+        string type
+        string route_id
+        object operating_days
+        array classes_available
+        array stops
+        date updated_at
+    }
+    STOP {
+        string code FK
+        string name
+        int seq
+        string arr
+        string dep
+        int day
+        float distance_km
+    }
+    INGEST_REPORTS {
+        date generated_at
+        object raw
+        object cleaned
+        object issue_counts
+    }
+    TRAINS ||--|{ STOP : "embeds (2 to 35)"
+    STATIONS ||--o{ STOP : "referenced by code"
+```
+
 At boot, the API loads the station master from Mongo into memory (a sorted array for prefix search). If
 Mongo is unavailable or empty, it falls back to `stations.json`. Routing reads only the engine's
 in-memory timetable.
+
+---
+
+## Scaling architecture
+
+The engine is stateless after it has loaded the timetable, so it scales by running more copies. In the
+distributed setup each engine is a **worker**: one process pinned to one vCPU. The Node API stays the only
+place that handles requests, and its `EnginePool` spreads the searches over the workers. Everything below
+is switched by environment variables; with one `ENGINE_URL` and the defaults, it behaves as the
+single-engine app.
+
+### Workers
+
+- `WORKER_ID` names the worker in its logs, in `/health`, and in every `/route` answer (`meta.worker` in
+  the API response).
+- `GET /metrics` serves Prometheus text with no extra dependency (`src/metrics.h`, a lock-free histogram):
+  requests by outcome, in-flight searches, budget hits, labels popped, response bytes, search time.
+- `/health` and `/metrics` are also served on `ADMIN_PORT` (7071) by a separate two-thread listener, so
+  health checks and scrapes never occupy a routing thread.
+- Every `/route` answer carries `X-Inflight`, the number of other searches running on that worker.
+- **Graceful drain**: on SIGTERM, `/health` answers 503 `draining` for `SHUTDOWN_GRACE_MS` while `/route`
+  keeps serving, then the listener stops, in-flight searches finish and the process exits 0.
+
+### Dispatch (`api/src/services/enginePool.ts`)
+
+```mermaid
+flowchart TD
+    REQ(["Search that missed the cache"]) --> ADM{"In flight ≥ capacity + MAX_QUEUE?<br/>capacity = workers × ENGINE_CONCURRENCY"}
+    ADM -->|"yes"| R429["❌ 429 OVERLOADED<br/>retry-after: 1"]
+    ADM -->|"no"| PICK["Pick a healthy worker not yet tried<br/>by LB_STRATEGY"]
+    PICK --> SEM["Wait for one of the worker's<br/>ENGINE_CONCURRENCY slots (FIFO)"]
+    SEM --> CALL["POST /route on the worker"]
+    CALL --> HEDGE{"HEDGE_AFTER_MS set and<br/>no answer by then?"}
+    HEDGE -->|"yes"| SECOND["Send the same search to a second worker;<br/>first answer wins, the loser is aborted"]
+    HEDGE -->|"no"| RES{"Result?"}
+    SECOND --> RES
+    RES -->|"ok"| OK(["✅ Compact result<br/>worker's X-Inflight recorded"])
+    RES -->|"unavailable"| FAIL["Count a failure; after FAIL_THRESHOLD<br/>in a row the worker is ejected"]
+    FAIL --> RETRY{"Retries left (RETRY_MAX)<br/>and an untried worker?"}
+    RETRY -->|"yes"| PICK
+    RETRY -->|"no"| R503["❌ 503 ENGINE_UNAVAILABLE"]
+    RES -->|"ENGINE_TIMEOUT_MS passed<br/>(covers queueing, retries, hedges)"| R503
+
+    classDef step fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    classDef decision fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    classDef good fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef bad fill:#FFB6C1,stroke:#DC143C,stroke-width:2px,color:#000
+    class PICK,SEM,CALL,SECOND,FAIL step
+    class ADM,HEDGE,RES,RETRY decision
+    class REQ,OK good
+    class R429,R503 bad
+```
+
+Load-balancing strategies (`LB_STRATEGY`):
+
+| Strategy | Picks |
+|---|---|
+| `round_robin` | The next worker in the list; ejected workers are skipped without shifting the order |
+| `random` | A random healthy worker |
+| `least_outstanding` | The worker with the fewest of this process's requests in flight or queued; ties rotate |
+| `p2c` | The less loaded of two random workers |
+| `consistent_hash` | A hash ring (100 virtual nodes per worker) keyed on `source\|destination` |
+| `least_reported` | `least_outstanding` plus the load each worker last reported (`X-Inflight`, `in_flight` in `/health`), decayed over `LB_REPORT_DECAY_MS`, so several API processes see each other's requests |
+
+Health and membership:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Healthy: in ENGINE_URLS or added through the registry
+    Healthy --> Healthy: request ok (failure count reset)
+    Healthy --> Ejected: FAIL_THRESHOLD failures in a row
+    Healthy --> Ejected: health check fails or answers 503 draining
+    Ejected --> Healthy: /health answers 200 (every HEALTH_INTERVAL_MS)
+    Ejected --> Ejected: still tried when no worker is healthy
+    Healthy --> Removed: left the Redis set ENGINE_REGISTRY_KEY
+    Ejected --> Removed: left the Redis set ENGINE_REGISTRY_KEY
+    Removed --> [*]
+```
+
+- Health checks go to the worker's admin port on a fresh connection (no parked keep-alive thread), and
+  resolve host names with c-ares, because `getaddrinfo` for a stopped container blocks a libuv thread for
+  about 5 s.
+- With `ENGINE_REGISTRY_KEY` set, each API process re-reads that Redis set every second and calls
+  `setWorkers()`, so workers can join and leave without an API restart.
+- `MAX_QUEUE=auto` (the default) allows one extra capacity of waiting requests, recomputed as membership
+  changes; `-1` is unlimited; a number is a fixed cap.
+
+### API tier
+
+- `NODE_CLUSTER=n` forks n API processes that share the port (`api/src/server.ts`); the primary restarts a
+  process that dies and serves the summed Prometheus metrics. Each process has its own pool, so a worker
+  can receive up to n × `ENGINE_CONCURRENCY` requests at once and needs at least that many
+  `ENGINE_THREADS`.
+- Several API hosts sit behind nginx (`loadtest/nginx/gateway.conf.template`: upstream keep-alive,
+  optional gzip).
+- Metrics (`api/src/metrics.ts`, prom-client on `METRICS_PORT`): the HTTP latency histogram, pool events
+  (retry, hedge, hedge win, rejected), per-worker outstanding, health, requests and errors, and cache
+  outcomes.
+- The cache is shared through Redis, and the cache key includes the engines' configuration and timetable
+  hash, so every process and host reads and writes the same entries.
 
 ---
 
@@ -495,10 +891,21 @@ All settings come from environment variables. See `.env.example`.
 | | `MAX_LABELS` | 500000 | Deterministic work budget per query (about 24 MB of labels per engine thread at the limit) |
 | | `K_NODE` | 0 | Heuristic per-event cap (0 = exact) |
 | | `PRUNE_STAY_ON` / `PRUNE_BOARD_EARLIER` | 1 / 1 | Dominance rules |
+| | `WORKER_ID` | `engine` | Name of this worker in logs, `/health`, metrics and answers |
 | api | `API_PORT`, `API_HOST` | 4000, `0.0.0.0` | |
-| | `ENGINE_URL` | `http://127.0.0.1:7070` | |
-| | `ENGINE_TIMEOUT_MS` | 5000 | Includes queueing time |
-| | `ENGINE_CONCURRENCY` | 4 | Maximum in-flight engine calls per API instance |
+| | `ENGINE_URLS` / `ENGINE_URL` | `http://127.0.0.1:7070` | Comma-separated list of engine workers, or a single one |
+| | `ENGINE_TIMEOUT_MS` | 5000 | Includes queueing, retries and hedges |
+| | `ENGINE_CONCURRENCY` | 4 | Maximum in-flight engine calls per worker, per API process |
+| | `LB_STRATEGY` | `round_robin` | `round_robin`, `random`, `least_outstanding`, `p2c`, `consistent_hash`, `least_reported` |
+| | `LB_REPORT_DECAY_MS` | 500 | `least_reported`: time constant of a worker's reported load |
+| | `RETRY_MAX` | 1 | Extra attempts on another worker after an "unavailable" failure |
+| | `HEDGE_AFTER_MS` | 0 | Send a second copy to another worker after this long (0 = off) |
+| | `MAX_QUEUE` | `auto` | Requests allowed to wait beyond capacity before 429: `auto` = one capacity, `-1` = unlimited, or a number |
+| | `FAIL_THRESHOLD`, `HEALTH_INTERVAL_MS` | 3, 2000 | Failures in a row before ejection; active health-check period (0 = off) |
+| | `ENGINE_REGISTRY_KEY` | unset | Redis set of worker URLs; when set, the pool follows it |
+| | `NODE_CLUSTER` | 1 | API processes sharing the port |
+| | `METRICS_PORT` | 9464 | Prometheus metrics listener (0 = off) |
+| | `CACHE_COALESCE`, `REDIS_LOCK_MS`, `REDIS_TIMEOUT_MS` | true, 0, 50 | In-process coalescing; cross-process lock (0 = off); Redis command timeout |
 | | `MAX_RESULTS` | 50 | Journeys computed per search and the maximum `limit`; the engine's `TOP_K` must be at least this |
 | | `MONGODB_URI`, `MONGODB_DB` | unset, `railway` | Mongo is optional outside Docker |
 | | `STATIONS_FILE` | `data/processed/stations.json` | Fallback station master |
@@ -510,6 +917,10 @@ All settings come from environment variables. See `.env.example`.
 | frontend | `API_INTERNAL_URL` | `http://127.0.0.1:4000` | Proxy target |
 | compose | `PUBLIC_PORT` | 80 | Published frontend port |
 | | `MONGO_ROOT_USER`, `MONGO_ROOT_PASSWORD` | (required) | Use a URL-safe password: it is embedded in the Mongo URI |
+
+The AWS study stack has its own knobs (worker count and placement, API hosts, gzip, prewarm, and the
+variables above). They are listed with comments in `deploy/variants/defaults.env`; its defaults differ in a
+few places (`LB_STRATEGY=least_outstanding`, `ENGINE_CONCURRENCY=2`, `LOG_LEVEL=warn`).
 
 ---
 
@@ -529,7 +940,32 @@ All settings come from environment variables. See `.env.example`.
   non-root.
 - `frontend`: the Next.js standalone server. It is the only published port.
 - Networks: `backend` (mongo, redis, engine, api) and `frontend` (api, frontend).
-- Every service has a healthcheck, `restart: unless-stopped`, and rotated json-file logs (10 MB × 5).
+- `cache-warmer`: a one-shot job using the API image; it exits 0 when the cache is filled.
+- Every long-running service has a healthcheck, `restart: unless-stopped`, and rotated json-file logs
+  (10 MB × 5).
+
+Start-up order (`depends_on` conditions):
+
+```mermaid
+flowchart LR
+    MONGO[("💾 mongo")] -->|"healthy"| SEED["📦 seed<br/>exits 0"]
+    SEED -->|"completed"| API["⚙️ api"]
+    ENGINE["⚡ engine"] -->|"healthy"| API
+    REDIS[("⚡ redis")] -->|"healthy"| API
+    SEED -->|"completed"| WARM["🔄 cache-warmer<br/>exits 0"]
+    ENGINE -->|"healthy"| WARM
+    REDIS -->|"healthy"| WARM
+    API -->|"healthy"| FE["🌐 frontend<br/>PUBLIC_PORT"]
+
+    classDef store fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    classDef svc fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef job fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    classDef edge fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    class MONGO,REDIS store
+    class ENGINE,API svc
+    class SEED,WARM job
+    class FE edge
+```
 
 ### AWS EC2
 
@@ -559,6 +995,12 @@ All settings come from environment variables. See `.env.example`.
    works the same way.
 6. Updates: `git pull && docker compose up -d --build`. The seed re-runs idempotently.
    Logs: `docker compose logs -f api engine`.
+
+### AWS, distributed (the study stack)
+
+The 10-host deployment with separate engine workers is provisioned with Terraform and deployed with the
+scripts in `deploy/`. It is described under [Scaling study](#scaling-study-on-aws) and, step by step, in
+[`deploy/README.md`](deploy/README.md).
 
 ---
 
@@ -600,10 +1042,14 @@ Where the time goes for a cold request (medians):
 | Routing (profile + search) | ~8 ms |
 | Engine JSON serialization (nlohmann, about 100 KB for 20 routes with all stops) | ~6 ms |
 | API: parse the engine response, shape it, and serialize | ~7 ms |
-
-(Measured before the compute-only change, when the engine still rendered full journeys; the engine now
-writes a compact result with plain string appends and the API renders only the returned page.)
 | Next.js proxy hop | ~20 ms |
+
+These tables were measured when the engine still rendered full journeys. Since then the engine writes a
+compact result (about 8.8 KB instead of about 257 KB at K = 50) with plain string appends, and the API
+renders only the returned page. On the local 4-worker rehearsal stack this moved the point where p99
+crosses 500 ms from about 58 to about 108 requests per second, and the median API overhead
+(`api_ms − engine_ms`) from 35–40 ms to about 19 ms. Those are laptop figures; the AWS measurements are in
+the [load-test report](docs/load-test-report.md).
 
 At 10 connections, `api_ms` includes queueing for the 4 engine slots, which is intentional backpressure.
 
@@ -625,14 +1071,298 @@ cd api && npm run bench -- --mode cold --connections 10 --duration 20 --url http
 
 ---
 
+## Load testing
+
+`loadtest/` holds everything needed to load the distributed setup, locally or on AWS. k6 never goes
+through Next.js: the path is k6 → nginx → Node API → workers.
+
+**Workloads** (`loadtest/k6/lib/queries.js`, data in `loadtest/data/queries.json`). All are deterministic
+for a given `SEED`, so repeats send the same queries:
+
+| `WORKLOAD` | Queries |
+|---|---|
+| `uniform` | Random station pairs and times, every request distinct (about 70 % have a route). `HEAVY_FRAC` mixes in a share of the slowest queries |
+| `zipf` | 2,000 queries among the 150 busiest stations, popularity skewed by `ZIPF_S` |
+| `heavy` | The slowest 2 % of a 4,000-query engine benchmark (154–586 ms each) |
+| `session` | Station autocomplete, a search, then page 2 |
+
+**Scenarios** (`loadtest/k6/scenarios/`):
+
+| Scenario | k6 executor | Use |
+|---|---|---|
+| `smoke` | 20 shared iterations | Must pass with 0 errors before every measured run |
+| `load` | `constant-arrival-rate` | Fixed open-loop rate |
+| `breakpoint` | `ramping-arrival-rate` | Ramp until the SLO breaks; k6 aborts on its thresholds |
+| `spike` | `ramping-arrival-rate` | Base rate, a short spike, back to base |
+| `soak` | `constant-arrival-rate` | Long run for drift |
+| `closed` | `constant-vus` | Closed loop, for the methodology comparison |
+
+The SLO used throughout is **p99 < 500 ms and errors < 0.1 %** at the client. k6 also reports custom
+metrics taken from the API's `meta` block (`route_engine_ms`, `route_api_ms`, `route_cache_hit`,
+`route_search_complete`, `route_overloaded`, requests per worker) and pushes all samples to Prometheus by
+remote write, so client and server metrics share one Grafana timeline.
+
+### Local rehearsal
+
+A 4-worker copy of the distributed setup on one machine, with nginx, Redis, Prometheus and Grafana
+(`loadtest/local/compose.yml`). It is for checking scripts and configurations cheaply; laptop numbers say
+little about AWS.
+
+```bash
+docker compose -f loadtest/local/compose.yml up -d --build      # gateway :8090, Grafana :3001, Prometheus :9090
+loadtest/local/k6.sh smoke
+SEED=$RANDOM START_RATE=10 MAX_RATE=150 DURATION=3m loadtest/local/k6.sh breakpoint
+LB_STRATEGY=p2c NODE_CLUSTER=2 docker compose -f loadtest/local/compose.yml up -d api    # change a knob
+node loadtest/verify-results.ts --url http://localhost:8090 --against loadtest/data/verify-baseline.json
+docker compose -f loadtest/local/compose.yml down
+```
+
+`verify-results.ts` checks that 200 fixed queries return identical route signatures, whatever the
+configuration. A rerun with the same `SEED` is answered from Redis, so use a new seed (or flush Redis) for
+an uncached measurement.
+
+---
+
+## Scaling study on AWS
+
+The study asks how this system scales and what limits it, through controlled comparisons: worker count,
+placement, load-balancing strategy, API tier size, caching, overload and failure behaviour. The goal is
+learning, not a production deployment. The design is in [`docs/scaling-plan.md`](docs/scaling-plan.md), the
+results are in [`docs/load-test-report.md`](docs/load-test-report.md) (explanations) and
+[`docs/load-test/results.md`](docs/load-test/results.md) (generated tables and charts).
+
+### Topology
+
+Budget: exactly 10 × m7i-flex.large (2 vCPU = one physical core with hyperthreading, 8 GB) in one VPC,
+subnet and cluster placement group, plus one k6 host in a second AWS account. All containers use host
+networking. MongoDB is not deployed: the API reads stations from the file in its image.
+
+```mermaid
+flowchart TB
+    LAPTOP["💻 Laptop<br/>Terraform, image build, controller.sh"]
+    subgraph ACC2["AWS account 2"]
+        K6["📡 k6 host and controller<br/>run.ts in tmux, k6, results"]
+    end
+    subgraph VPC["AWS account 1: VPC, one subnet, cluster placement group"]
+        subgraph GW["node09: gateway"]
+            NGINX["🌐 nginx :80"]
+            API["⚙️ Node API :4000<br/>NODE_CLUSTER processes"]
+        end
+        subgraph WK["node01–node08: workers"]
+            W["⚡ 2 engine workers per host<br/>one per vCPU, cpuset pinned<br/>16 workers"]
+        end
+        subgraph DATA["node10: data and monitoring"]
+            REDIS[("⚡ Redis")]
+            PROM["📊 Prometheus :9090"]
+            GRAF["📈 Grafana :3000"]
+        end
+        ECR[("📦 ECR<br/>engine and API images")]
+    end
+    LAPTOP -->|"SSH"| K6
+    LAPTOP -->|"docker push"| ECR
+    K6 -->|"HTTP :80"| NGINX
+    K6 -->|"remote write :9090"| PROM
+    K6 -.->|"SSH :22: deploy, fault actions, logs"| VPC
+    NGINX --> API
+    API -->|"POST /route"| W
+    API --> REDIS
+    PROM --> GRAF
+
+    classDef ctl fill:#FFD700,stroke:#333,stroke-width:2px,color:#000
+    classDef svc fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef store fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    classDef obs fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    class LAPTOP,K6 ctl
+    class NGINX,API,W svc
+    class REDIS,ECR store
+    class PROM,GRAF obs
+```
+
+Two layouts are used:
+
+| Layout | Worker hosts | Workers | API hosts × processes | Used by |
+|---|---|---|---|---|
+| Default | node01–node08 | 16 | 1 × 1 (node09) | E1, E2, E3, E14 |
+| `gw2-cluster2` (`API_HOSTS=2 NODE_CLUSTER=2`) | node01–node07 | 14 | 2 × 2 (node08, node09) | E8 onwards, all other experiments |
+
+Roles live in `deploy/inventory.json`; `deploy/render.ts` turns the inventory plus a variant
+(`deploy/variants/*.env` and `KEY=VALUE` overrides) into one compose file per host, and `deploy/deploy.sh`
+starts them in phases over SSH. Security group: everything inside the group; the admin IP on 22 and 3000;
+the k6 Elastic IP on 80, 9090 and 22.
+
+### Observability
+
+```mermaid
+flowchart LR
+    ENG["⚡ Engine workers<br/>/metrics on ADMIN_PORT 7071"] --> PROM
+    API["⚙️ API processes<br/>prom-client :9464"] --> PROM
+    NGX["🌐 nginx-exporter"] --> PROM
+    NODE["node-exporter<br/>every host"] --> PROM
+    CAD["cAdvisor<br/>every host"] --> PROM
+    K6["📡 k6<br/>remote write, TESTID tag"] --> PROM
+    PROM[("📊 Prometheus<br/>file_sd targets from the inventory")] --> GRAF["📈 Grafana<br/>dashboard 'Railway scaling'"]
+    PROM --> SNAP["run.ts: 33 range queries<br/>saved per repeat as prom/*.json"]
+    SNAP --> ANALYZE["analyze.ts"]
+
+    classDef src fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    classDef store fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    classDef out fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    class ENG,API,NGX,NODE,CAD,K6 src
+    class PROM store
+    class GRAF,SNAP,ANALYZE out
+```
+
+### Experiments
+
+The catalogue is code (`loadtest/experiments.ts`): each experiment is a list of variants, and a variant is
+one deployment plus one k6 run, optionally with timed fault actions. Each variant runs 3 times.
+
+| Id | Experiment | Varies | Scenario |
+|---|---|---|---|
+| E1 | Worker count scaling | 1, 2, 4, 8, 12, 16 workers | breakpoint |
+| E2 | Placement and hyperthreading | 8 workers: one per host, two per host, unpinned | breakpoint |
+| E3 | Threads per worker and pool concurrency | `ENGINE_THREADS` 1/2/4 × `ENGINE_CONCURRENCY` 1/2 | breakpoint |
+| E4 | Load-balancing strategy | 6 strategies × uniform and heavy-tailed mix | load |
+| E5 | Where to balance (nginx vs Node pool) | not run, see below | |
+| E6 | Heterogeneous pools | not run, see below | |
+| E7 | Hedged requests | `HEDGE_AFTER_MS` off, 100, 250 | load |
+| E8 | Node tier scaling | 1–4 API hosts × 1 or 2 processes | breakpoint |
+| E9 | Payload cost | page size 10 or 50 × gzip off or on | breakpoint |
+| E10 | Cache | no cache, Redis, Redis + warmer × zipf s 0, 0.8, 1.1, 1.4 | load |
+| E11 | Cache stampede | no coalescing, in-process coalescing, Redis lock | load, 30 s cold burst |
+| E12 | Overload behaviour | unlimited queue, 429 cap, 1 s timeout, retry storm at 1.5× and 2× capacity | load |
+| E13 | Failure injection | kill 1, 4 or 8 workers, or Redis, at 60 s; restart at 180 s | load |
+| E14 | Elastic scaling | 8 workers, 8 more join through the Redis registry at 60 s | load |
+| E15 | K and label budget | `TOP_K` 10/20/50 × `MAX_LABELS` 200k/500k | breakpoint |
+| E16 | Closed vs open loop | constant arrival rate vs constant VUs | load, closed |
+| E17 | Spike and soak on the chosen configuration | spike to 1.5× capacity; 60 min soak | spike, soak |
+| E18 | Little's law and queueing | load sweep 20–100 % of capacity | load |
+
+E5 and E6 are out of scope. E5: the engine answers compact journeys that only the API can render, so nginx
+cannot send `/api/routes` straight to the workers. E6: the API has no query-cost predictor or pool split.
+
+### Running an experiment
+
+Experiments run on the k6 host inside tmux, so the laptop's connection may drop. `deploy/controller.sh`
+is the laptop side: `setup`, `push`, `run`, `status`, `attach`, `pull`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Operator (laptop)
+    participant C as k6 host (run.ts in tmux)
+    participant H as Study hosts
+    participant P as Prometheus
+
+    O->>C: controller.sh run E4 CAPACITY=…
+    loop every variant × repeat (skipped if already ok)
+        C->>H: deploy.sh: render, rsync, compose up in phases, flush Redis
+        C->>H: k6 smoke, random seed (must pass)
+        C->>H: setup actions (e.g. stop workers, set the registry)
+        par measured run
+            C->>H: k6 scenario, fixed seed, TESTID tag
+        and timeline
+            C->>H: fault actions at their times (kill, start, registry)
+        end
+        C->>P: k6 samples by remote write
+        C->>H: restore (start workers and Redis, registry = all)
+        C->>P: 33 range queries over the run window
+        C->>H: docker compose logs of every host
+        C->>C: write meta.json, summary.json, prom/, logs/
+    end
+    O->>C: controller.sh status / attach
+    O->>C: controller.sh pull E4
+    C-->>O: loadtest/results/E4/
+```
+
+```bash
+node loadtest/run.ts --list                  # experiments, questions and params (offline)
+node loadtest/run.ts E8 --dry-run            # every command, without running anything
+deploy/controller.sh run E8                  # on the k6 host: 8 variants × 3 repeats
+deploy/controller.sh status                  # running or idle, last log lines
+deploy/controller.sh pull E8                 # results to loadtest/results/E8/
+node loadtest/analyze.ts                     # tables and charts -> docs/load-test/
+```
+
+A repeat whose `meta.json` says `ok` is skipped on a rerun, so an interrupted experiment resumes where it
+stopped. The full procedure, including provisioning, what to watch in Grafana and teardown, is in
+[`docs/experiment-runbook.md`](docs/experiment-runbook.md); the exact ordered commands from E8 to the end
+are in [`docs/next_sequence_commands.md`](docs/next_sequence_commands.md).
+
+Run order and estimated run time, about 25 hours of machine time for 3 repeats (the axis is elapsed
+time: `D01 06:00` is 6 hours in, `D02` starts at 24 hours):
+
+```mermaid
+gantt
+    title Study run order after E1
+    dateFormat YYYY-MM-DD HH:mm
+    axisFormat D%d %H:%M
+    tickInterval 6hour
+    section Default layout
+    E8 Node tier (all 8 variants)    :e8, 2026-01-01 00:00, 180m
+    E2 Placement                     :e2, after e8, 60m
+    E3 Threads and concurrency       :e3, after e2, 120m
+    section gw2-cluster2
+    E4 LB strategy                   :e4, after e3, 180m
+    E7 Hedging                       :e7, after e4, 45m
+    E9 Payload                       :e9, after e7, 90m
+    E10 Cache                        :e10, after e9, 180m
+    E11 Stampede                     :e11, after e10, 25m
+    E15 K and budget                 :e15, after e11, 120m
+    E12 Overload                     :e12, after e15, 90m
+    E13 Failures                     :e13, after e12, 90m
+    section Default layout again
+    E14 Elastic scaling              :e14, after e13, 60m
+    section gw2-cluster2 again
+    E16 Open vs closed               :e16, after e14, 30m
+    E18 Load sweep                   :e18, after e16, 90m
+    E8 best config capacity          :e8b, after e18, 25m
+    E17 Spike and soak               :e17, after e8b, 90m
+```
+
+E8 itself runs on all four API-host layouts; the section names say which layout the other experiments use.
+
+### From results to the report
+
+```mermaid
+flowchart LR
+    RES["📦 loadtest/results/<br/>EXP / variant / rN"] --> AN["analyze.ts"]
+    AN --> MD["docs/load-test/results.md<br/>tables per experiment"]
+    AN --> SVG["docs/load-test/*.svg<br/>charts"]
+    AN --> CSV["docs/load-test/summary-table.csv"]
+    RES --> PACK["pack.ts"]
+    NOTES["notes.md, Grafana screenshots"] --> PACK
+    PACK --> ZIP["study-results-DATE.zip"]
+    ZIP --> LLM["Any LLM with<br/>docs/analysis-llm-prompt.md"]
+    LLM --> EXPL["Explanations, its own figures"]
+    MD --> REPORT["📝 docs/load-test-report.md"]
+    SVG --> REPORT
+    EXPL --> REPORT
+
+    classDef data fill:#E6E6FA,stroke:#333,stroke-width:2px,color:#00008B
+    classDef tool fill:#87CEEB,stroke:#333,stroke-width:2px,color:#00008B
+    classDef out fill:#90EE90,stroke:#333,stroke-width:2px,color:#006400
+    class RES,NOTES,ZIP data
+    class AN,PACK,LLM tool
+    class MD,SVG,CSV,EXPL,REPORT out
+```
+
+`analyze.ts` computes, per variant, the median and spread over repeats; for breakpoint runs the maximum RPS
+within the SLO (the highest achieved rate before the SLO is broken for two consecutive 5 s steps); for E1 a
+Universal Scalability Law fit; for fault runs detection and recovery times; and for E18 a check of Little's
+law and an M/M/c prediction. It needs nothing but Node, and can be rerun after every experiment.
+
+---
+
 ## Testing
 
 | Suite | Command | What it covers |
 |---|---|---|
 | Preprocessing and geocoding (15 tests) | `cd scripts && npm test` | Overnight rule (including KUR 23:45/00:05 doj 2), code recovery, name canonicalization, policies; coordinate interpolation and the outlier guard |
 | Engine (27 cases, about 648k assertions) | `routing-engine/build/engine_tests` | See below |
-| API (36 tests) | `cd api && npm test` | Validation and error codes, pagination, filters, Redis cache, prewarm, coalescing, pool strategies, no-route message, engine-down 503, semaphore, renderer parity with the engine's former output, timetable hash |
+| API (39 tests) | `cd api && npm test` | Validation and error codes, pagination, filters, Redis cache, prewarm, coalescing, every pool strategy, ejection, retry, hedging, 429, no-route message, engine-down 503, semaphore, renderer parity with the engine's former output, timetable hash |
 | Types | `cd api && npx tsc --noEmit` | |
+| Study tooling (33 tests) | `node --test loadtest/test/*.test.ts` | Every variant of every experiment renders on the default inventory, knob names match `k6.sh`, CLI parsing; the analysis: capacity rule, counter resets, USL fit, Erlang C, charts |
 | Frontend build | `cd frontend && npx next build` | Type check and build |
 
 The engine suites are:
@@ -679,6 +1409,7 @@ The engine suites are:
 - A binary, memory-mapped timetable format, for faster cold starts and a smaller image.
 - Caching backward profiles per (destination, date window), which is reusable across sources.
 - RAPTOR-style round pruning to shrink the label space for long-distance pairs.
-- Horizontal scaling: engine replicas behind the API (they are stateless). The Redis cache is already
-  shared across API instances.
 - Per-station minimum transfer times, if such data becomes available.
+- Pools split by predicted query cost, so the slow 2 % of searches cannot block the fast ones (E6).
+- Rendering in the worker's path, which would allow balancing at nginx without the Node pool (E5).
+- A timetable version in the deployment, so a new timetable can roll out worker by worker.
