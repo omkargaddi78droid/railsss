@@ -120,6 +120,7 @@ plus `loadtest/results/manifest.jsonl` with one line per repeat. A repeat whose 
 is skipped on a rerun, so an interrupted experiment resumes where it stopped (`--force` redoes it).
 E5 (nginx straight to workers) and E6 (cost-split pools) are not runnable yet; `--list` says why.
 `node --test loadtest/test/*.test.ts` checks offline that every variant renders on the default inventory.
+After `controller.sh pull`, `node loadtest/analyze.ts` writes the tables and charts to `docs/load-test/`.
 
 ## Teardown
 

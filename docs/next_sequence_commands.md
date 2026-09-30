@@ -10,8 +10,9 @@ Run everything from the repo root on the laptop. Rules for every step:
   experiment runs at a time, so every `run` is followed by `wait_idle` (defined in step 1), which waits
   until `deploy/controller.sh status` says idle. `deploy/controller.sh attach` shows it live from another
   terminal (Ctrl-b d detaches). The laptop may sleep during `wait_idle`; just run it again.
-- After each experiment: `deploy/controller.sh pull <EXP>`, take the screenshots listed in the runbook,
-  and add a line to `loadtest/results/notes.md`.
+- After each experiment: `deploy/controller.sh pull <EXP>`, then `node loadtest/analyze.ts` and a look at
+  `docs/load-test/results.md` (a broken run shows up while the hosts are still there), take the screenshots
+  listed in the runbook, and add a line to `loadtest/results/notes.md`.
 - If a run stops (deploy failed, k6 host restarted), fix the cause and rerun the **same** command:
   finished repeats are skipped.
 - To save money, add `--repeats 1` to every run for a first pass, then run the same commands again
@@ -21,11 +22,11 @@ Run everything from the repo root on the laptop. Rules for every step:
 
 ## 0. Once: rebuild the images (the code changed after E1)
 
-E8 and E4 changed in `loadtest/experiments.ts`, the engine now sends `X-Inflight`, and the API has the
-`least_reported` strategy. Commit first so the image tag is a clean commit.
+Since E1 the engine sends `X-Inflight` and the API has the `least_reported` strategy, so both images must be
+rebuilt. The image tag is the git commit: check that the checkout is clean first (`git status`), and commit
+if it is not.
 
 ```bash
-git add -u && git add docs/next_sequence_commands.md && git commit -m "E8 gw3/gw4, least_reported strategy, gw2-cluster2 plan"
 node --test loadtest/test/*.test.ts                 # all pass
 AWS_PROFILE=study deploy/images.sh                  # new engine + API images; writes deploy/.out/image-tag
 deploy/controller.sh push                           # new code and image tag to the k6 host
@@ -40,7 +41,8 @@ EOF
 
 ## 1. Capacity of the default layout (from E1), and a wait helper
 
-Read `C16` = max RPS within the SLO of `E1/w16` (median of the repeats; runbook section 6).
+Read `C16` = max RPS within the SLO of `E1/w16` from `docs/load-test/results.md` (median of the repeats,
+rounded down to a multiple of 10; runbook section 6).
 
 `wait_idle` blocks until the controller has finished the current experiment, so each block below can be
 pasted as a whole. Define it again in every new terminal.
@@ -182,15 +184,17 @@ cat >> loadtest/results/notes.md <<EOF
 EOF
 ```
 
-## 8. Pack the results
+## 8. Analyse, pack, write the report
 
 ```bash
 wait_idle
 deploy/controller.sh pull
+node loadtest/analyze.ts                            # -> docs/load-test/ (results.md, charts, summary-table.csv)
 node loadtest/pack.ts                               # -> study-results-<date>.zip in the repo root
 ```
 
-Give the zip and `docs/analysis-llm-prompt.md` to the analysis LLM.
+Give the zip and `docs/analysis-llm-prompt.md` to an LLM for the explanations, write them into
+`docs/load-test-report.md`, and commit `docs/` (runbook section 10).
 
 ## End of a session (at any point between experiments)
 

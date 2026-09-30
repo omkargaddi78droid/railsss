@@ -1,7 +1,8 @@
 # Scaling study: experiment runbook
 
 This runbook covers the whole study, from an empty AWS account to one zip of results that you give to
-the analysis LLM (`docs/analysis-llm-prompt.md`) and to `loadtest/analyze.ts`. The plan and the questions
+`loadtest/analyze.ts` and the analysis LLM (`docs/analysis-llm-prompt.md`), and then to the report
+(`docs/load-test-report.md`). The plan and the questions
 behind each experiment are in `docs/scaling-plan.md`. The tooling is described in `deploy/README.md`.
 
 All commands run from the repo root on your own machine (the laptop) unless a step says otherwise.
@@ -21,8 +22,8 @@ laptop                         k6 host = controller (second account)        10 s
 
 ## 0. Budget and time
 
-- 11 × m7i-flex.large total (10 study hosts + 1 for k6), all on demand. That is roughly US$1.2 per hour in
-  ap-south-1; check current prices. Terraform destroys everything, including the ECR images.
+- 11 × m7i-flex.large total (10 study hosts + 1 for k6), all on demand. That is roughly US$1.2 per hour;
+  check current prices for your region. Terraform destroys everything, including the ECR images.
 - The full catalogue with 3 repeats is about 24 hours of machine time (table in section 5), so about
   US$30 in instances. Do it over several sessions and destroy the stack between them. Results are written
   on the k6 host; `deploy/controller.sh pull` copies them to the laptop, which keeps them between sessions
@@ -181,7 +182,7 @@ with `<gw2>` standing for `API_HOSTS=2 NODE_CLUSTER=2`.
 
 | Order | Exp | Layout | Arguments | Variants | Time (3 repeats) |
 |---|---|---|---|---|---|
-| 1 | E1 | default | `E1` | w1 w2 w4 w8 w12 w16 | ≈ 2 h |
+| 1 | E1 (done) | default | `E1` | w1 w2 w4 w8 w12 w16 | ≈ 2 h |
 | 2 | E8 | varies | `E8` | gw1/gw2/gw3/gw4 × cluster1/2 | ≈ 3 h |
 | 3 | E2 | default | `E2` | spread-8hosts, pack-4hosts, unpinned-8hosts | ≈ 1 h |
 | 4 | E3 | default | `E3` | c1/c2 × t1/t2/t4 | ≈ 2 h |
@@ -344,13 +345,18 @@ and **gather** means what to add beyond what `run.ts` saves automatically.
 
 ## 6. Reading CAPACITY from a breakpoint run
 
-After E1 (or any breakpoint), you can compute the max RPS within the SLO in one of two ways.
-- Quick (after `deploy/controller.sh pull E1`): `jq '.metrics.http_reqs.rate' loadtest/results/E1/w16/r*/summary.json` gives the *average* rate
-  over the run. This is lower than the rate at the knee. Do not use it as capacity.
-- Correct: in Grafana, find the time when the API p99 (panel "API latency") first stays above 500 ms, and
-  read the k6 RPS at that moment. Or read it from `prom/api_latency_p99.json` and `prom/k6_rps.json`.
-  Take the median of the three repeats, rounded down to a multiple of 10. `loadtest/analyze.ts`
-  and the LLM prompt compute this for the report. For the runs, a reasonable reading by eye is enough.
+```bash
+deploy/controller.sh pull E8
+node loadtest/analyze.ts                  # -> docs/load-test/results.md, summary-table.csv, charts
+```
+
+Read "Max RPS within SLO, median" for the variant in `docs/load-test/results.md` (E1 `w16` gives `C16`, E8
+`gw2-cluster2` gives `C14`) and round it down to a multiple of 10. The rule: the highest achieved RPS before
+the SLO is broken for two consecutive 5 s steps (API p99 ≥ 500 ms, or more than 0.1 % non-2xx answers).
+- A value shown as "≥ n" means the ramp ended at `MAX_RATE` before the SLO broke: rerun that variant with a
+  higher ceiling.
+- The `http_reqs.rate` of `summary.json` is the *average* over the whole ramp. Do not use it as capacity.
+- To check by eye: in Grafana, read the k6 RPS at the moment the run starts failing.
 
 ## 7. Grafana screenshots
 
@@ -401,10 +407,16 @@ study-results/
   notes.md               your notes (decisions such as "after E8: gw2-cluster2, C14 = …")
 ```
 
-Give the zip plus `docs/analysis-llm-prompt.md` to the analysis LLM. Run `loadtest/analyze.ts` on the same
-results (Step 7) and compare the two.
+## 10. Writing the report
 
-## 10. Troubleshooting
+1. `node loadtest/analyze.ts` regenerates `docs/load-test/` (tables, charts, `summary-table.csv`). Run it
+   after every `pull`: a broken run shows up while the hosts are still there.
+2. Give the zip plus `docs/analysis-llm-prompt.md` to an LLM. It writes explanations and its own figures;
+   compare its numbers with `docs/load-test/results.md`.
+3. Fill in the "Explanation" parts, the summary table, the recommended configuration and the cost in
+   `docs/load-test-report.md`, then commit `docs/`.
+
+## 11. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
