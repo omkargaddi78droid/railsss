@@ -1,0 +1,126 @@
+{
+  "id": "E13",
+  "title": "Failure injection",
+  "question": "Kill 1, 4 or 8 workers (SIGKILL) or Redis mid-run: detection time, error burst, recovery after restart.",
+  "base": "baseline",
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.6
+  },
+  "overrides": {
+    "deploy": {
+      "API_HOSTS": "2",
+      "NODE_CLUSTER": "2"
+    },
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "kill1",
+      "scenario": "load",
+      "k6": {
+        "RATE": 660,
+        "DURATION": "5m"
+      },
+      "during": [
+        {
+          "at": 60,
+          "action": {
+            "kind": "kill-workers",
+            "count": 1
+          }
+        },
+        {
+          "at": 180,
+          "action": {
+            "kind": "start-workers"
+          }
+        }
+      ],
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "kill4",
+      "scenario": "load",
+      "k6": {
+        "RATE": 660,
+        "DURATION": "5m"
+      },
+      "during": [
+        {
+          "at": 60,
+          "action": {
+            "kind": "kill-workers",
+            "count": 4
+          }
+        },
+        {
+          "at": 180,
+          "action": {
+            "kind": "start-workers"
+          }
+        }
+      ],
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "kill8",
+      "scenario": "load",
+      "k6": {
+        "RATE": 660,
+        "DURATION": "5m"
+      },
+      "during": [
+        {
+          "at": 60,
+          "action": {
+            "kind": "kill-workers",
+            "count": 8
+          }
+        },
+        {
+          "at": 180,
+          "action": {
+            "kind": "start-workers"
+          }
+        }
+      ],
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "kill-redis",
+      "scenario": "load",
+      "k6": {
+        "RATE": 660,
+        "DURATION": "5m"
+      },
+      "during": [
+        {
+          "at": 60,
+          "action": {
+            "kind": "kill-redis"
+          }
+        },
+        {
+          "at": 180,
+          "action": {
+            "kind": "start-redis"
+          }
+        }
+      ],
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    }
+  ]
+}

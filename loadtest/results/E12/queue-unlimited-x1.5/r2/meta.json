@@ -1,0 +1,28 @@
+{
+  "experiment": "E12",
+  "title": "Overload behaviour",
+  "variant": "queue-unlimited-x1.5",
+  "repeat": 2,
+  "testid": "e12-queue-unlimited-x1.5-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "MAX_QUEUE": "-1",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "1650",
+    "DURATION": "2m"
+  },
+  "params": {
+    "CAPACITY": 1100
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T18:36:05.423Z",
+  "deploy_exit": 1,
+  "status": "deploy-failed",
+  "finished_at": "2026-11-01T18:36:07.428Z"
+}

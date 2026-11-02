@@ -1,0 +1,44 @@
+{
+  "experiment": "E7",
+  "title": "Hedged requests",
+  "variant": "hedge-100",
+  "repeat": 3,
+  "testid": "e7-hedge-100-r3",
+  "base": "baseline",
+  "deploy_overrides": {
+    "HEDGE_AFTER_MS": "100",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "WORKLOAD": "uniform",
+    "HEAVY_FRAC": "0.1",
+    "RATE": "330",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "HEAVY_CAPACITY": 0,
+    "LOAD": 0.6,
+    "HEAVY_FRAC": 0.1
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T15:59:34.956Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T15:59:38.417Z",
+  "ended_at": "2026-11-01T16:02:38.933Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [],
+  "duration_s": 180.51600003242493,
+  "status": "ok",
+  "finished_at": "2026-11-01T16:02:40.859Z"
+}

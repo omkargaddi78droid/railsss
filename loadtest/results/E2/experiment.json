@@ -1,0 +1,54 @@
+{
+  "id": "E2",
+  "title": "Placement and hyperthreading",
+  "question": "8 workers: one per host (sibling vCPU idle) vs two HT siblings per host on 4 hosts vs one unpinned per host.",
+  "base": "baseline",
+  "params": {
+    "MAX_RATE": 500
+  },
+  "overrides": {
+    "deploy": {},
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "spread-8hosts",
+      "deploy": {
+        "WORKERS": 8,
+        "WORKER_PLACEMENT": "spread"
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 500,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "pack-4hosts",
+      "deploy": {
+        "WORKERS": 8,
+        "WORKER_PLACEMENT": "pack"
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 500,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "unpinned-8hosts",
+      "deploy": {
+        "WORKERS": 8,
+        "WORKERS_PER_HOST": 1
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 500,
+        "DURATION": "5m"
+      }
+    }
+  ]
+}

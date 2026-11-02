@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" role="img" aria-label="E13 kill1: p99 latency over time">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="420" fill="var(--surface)"/>
+<text class="title" x="64" y="26">E13 kill1: p99 latency over time</text>
+<text class="sub" x="64" y="44">API p99 over 30 s windows (repeat 1)</text>
+<line x1="64" x2="736" y1="370" y2="370" stroke="var(--axis)"/>
+<text class="tick" x="56" y="374" text-anchor="end">0</text>
+<line x1="64" x2="736" y1="267.33333333333337" y2="267.33333333333337" stroke="var(--grid)"/>
+<text class="tick" x="56" y="271.33333333333337" text-anchor="end">200</text>
+<line x1="64" x2="736" y1="164.66666666666669" y2="164.66666666666669" stroke="var(--grid)"/>
+<text class="tick" x="56" y="168.66666666666669" text-anchor="end">400</text>
+<line x1="64" x2="736" y1="62" y2="62" stroke="var(--grid)"/>
+<text class="tick" x="56" y="66" text-anchor="end">600</text>
+<text class="tick" x="64" y="388" text-anchor="middle">0</text>
+<text class="tick" x="232" y="388" text-anchor="middle">100</text>
+<text class="tick" x="400" y="388" text-anchor="middle">200</text>
+<text class="tick" x="568" y="388" text-anchor="middle">300</text>
+<text class="tick" x="736" y="388" text-anchor="middle">400</text>
+<text x="400" y="410" text-anchor="middle">seconds after start</text>
+<text transform="translate(16 216) rotate(-90)" text-anchor="middle">p99 latency (ms)</text>
+<line x1="64" x2="736" y1="113.33333333333331" y2="113.33333333333331" stroke="var(--crit)" stroke-width="1.5"/>
+<text x="736" y="107.33333333333331" text-anchor="end">SLO 500 ms</text>
+<line x1="164.80167987823486" x2="164.80167987823486" y1="62" y2="370" stroke="var(--muted)"/>
+<text x="169.80167987823486" y="74">kill-workers 1</text>
+<line x1="366.40167987823486" x2="366.40167987823486" y1="62" y2="370" stroke="var(--muted)"/>
+<text x="371.40167987823486" y="74">start-workers</text>
+<path d="M72.9 256.2L81.3 265.2L89.7 270.0L98.1 270.3L106.5 271.5L114.9 268.7L123.3 271.4L131.7 273.3L140.1 273.0L148.5 269.9L156.9 270.2L165.3 269.0L173.7 268.1L182.1 270.5L190.5 272.9L198.9 269.8L207.3 269.0L215.7 266.2L224.1 264.6L232.5 264.3L240.9 266.3L249.3 267.3L257.7 267.3L266.1 268.7L274.5 268.5L282.9 266.5L291.3 265.5L299.7 267.0L308.1 265.7L316.5 265.1L324.9 266.4L333.3 264.5L341.7 264.6L350.1 265.2L358.5 265.6L366.9 266.2L375.3 266.6L383.7 267.1L392.1 266.8L400.5 268.5L408.9 268.7L417.3 273.9L425.7 274.6L434.1 275.6L442.5 273.7L450.9 272.8L459.3 268.6L467.7 268.6L476.1 267.4L484.5 268.9L492.9 269.9L501.3 272.2L509.7 270.3L518.1 270.6L526.5 269.6L534.9 269.9L543.3 268.3L551.7 268.9L560.1 268.4L568.5 267.6L576.9 266.1L585.3 267.4L593.7 266.4" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>p99</title></path>
+<circle cx="593.7" cy="266.4" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>p99: 202 at 315</title></circle>
+</svg>

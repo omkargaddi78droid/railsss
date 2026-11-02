@@ -1,0 +1,93 @@
+{
+  "id": "E3",
+  "title": "Threads per worker and pool concurrency",
+  "question": "1, 2 or 4 httplib threads on one pinned vCPU, with the pool sending 1 or 2 requests at a time to each worker.",
+  "base": "baseline",
+  "params": {
+    "MAX_RATE": 900
+  },
+  "overrides": {
+    "deploy": {},
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "c1-t1",
+      "deploy": {
+        "ENGINE_CONCURRENCY": 1,
+        "ENGINE_THREADS": 1
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 900,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "c1-t2",
+      "deploy": {
+        "ENGINE_CONCURRENCY": 1,
+        "ENGINE_THREADS": 2
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 900,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "c1-t4",
+      "deploy": {
+        "ENGINE_CONCURRENCY": 1,
+        "ENGINE_THREADS": 4
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 900,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "c2-t1",
+      "deploy": {
+        "ENGINE_CONCURRENCY": 2,
+        "ENGINE_THREADS": 1
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 900,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "c2-t2",
+      "deploy": {
+        "ENGINE_CONCURRENCY": 2,
+        "ENGINE_THREADS": 2
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 900,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "c2-t4",
+      "deploy": {
+        "ENGINE_CONCURRENCY": 2,
+        "ENGINE_THREADS": 4
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 900,
+        "DURATION": "5m"
+      }
+    }
+  ]
+}

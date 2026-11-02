@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" role="img" aria-label="E14 static16: requests over time">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="420" fill="var(--surface)"/>
+<text class="title" x="64" y="26">E14 static16: requests over time</text>
+<text class="sub" x="64" y="44">Client requests per second, 30 s windows (repeat 1)</text>
+<line x1="64" x2="736" y1="370" y2="370" stroke="var(--axis)"/>
+<text class="tick" x="56" y="374" text-anchor="end">0</text>
+<line x1="64" x2="736" y1="299" y2="299" stroke="var(--grid)"/>
+<text class="tick" x="56" y="303" text-anchor="end">100</text>
+<line x1="64" x2="736" y1="228" y2="228" stroke="var(--grid)"/>
+<text class="tick" x="56" y="232" text-anchor="end">200</text>
+<line x1="64" x2="736" y1="157" y2="157" stroke="var(--grid)"/>
+<text class="tick" x="56" y="161" text-anchor="end">300</text>
+<line x1="64" x2="736" y1="86" y2="86" stroke="var(--grid)"/>
+<text class="tick" x="56" y="90" text-anchor="end">400</text>
+<text class="tick" x="64" y="388" text-anchor="middle">0</text>
+<text class="tick" x="232" y="388" text-anchor="middle">100</text>
+<text class="tick" x="400" y="388" text-anchor="middle">200</text>
+<text class="tick" x="568" y="388" text-anchor="middle">300</text>
+<text class="tick" x="736" y="388" text-anchor="middle">400</text>
+<text x="400" y="410" text-anchor="middle">seconds after start</text>
+<text transform="translate(16 228) rotate(-90)" text-anchor="middle">requests per second</text>
+<path d="M89.2 252.9L97.6 205.9L106.0 158.5L114.4 90.2L122.8 86.8L131.2 86.8L139.6 86.7L148.0 86.7L156.4 86.6L164.8 86.7L173.2 86.7L181.6 86.9L190.0 86.8L198.4 86.8L206.8 86.8L215.2 86.8L223.6 86.7L232.0 86.6L240.4 86.7L248.8 86.6L257.2 86.6L265.6 86.7L274.0 86.7L282.4 86.6L290.8 86.8L299.2 86.6L307.6 86.7L316.0 86.8L324.4 86.7L332.8 86.6L341.2 86.7L349.6 86.8L358.0 86.7L366.4 86.8L374.8 86.8L383.2 86.8L391.6 86.5L400.0 86.6L408.4 86.7L416.8 86.7L425.2 86.7L433.6 86.7L442.0 86.8L450.4 86.7L458.8 86.7L467.2 86.7L475.6 86.7L484.0 86.8L492.4 86.7L500.8 86.9L509.2 86.6L517.6 86.7L526.0 86.7L534.4 86.7L542.8 86.6L551.2 86.8L559.6 86.7L568.0 86.6L576.4 87.0L584.8 158.6L593.2 206.9" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>successful</title></path>
+<circle cx="593.2" cy="206.9" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>successful: 230 at 315</title></circle>
+<line x1="64" x2="80" y1="62" y2="62" stroke="var(--s1)" stroke-width="3" stroke-linecap="round"/>
+<text x="86" y="66">successful</text>
+<line x1="164" x2="180" y1="62" y2="62" stroke="var(--s2)" stroke-width="3" stroke-linecap="round"/>
+<text x="186" y="66">failed or 429</text>
+</svg>

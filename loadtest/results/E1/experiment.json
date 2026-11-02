@@ -1,0 +1,93 @@
+{
+  "id": "E1",
+  "title": "Worker count scaling",
+  "question": "How does the maximum RPS within the SLO grow with 1–16 workers, and where does it stop being linear (USL fit)?",
+  "base": "baseline",
+  "params": {
+    "PER_WORKER_RPS": 50
+  },
+  "overrides": {
+    "deploy": {},
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "w1",
+      "deploy": {
+        "WORKERS": 1
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "WORKLOAD": "uniform",
+        "START_RATE": 5,
+        "MAX_RATE": 100,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "w2",
+      "deploy": {
+        "WORKERS": 2
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "WORKLOAD": "uniform",
+        "START_RATE": 5,
+        "MAX_RATE": 150,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "w4",
+      "deploy": {
+        "WORKERS": 4
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "WORKLOAD": "uniform",
+        "START_RATE": 5,
+        "MAX_RATE": 250,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "w8",
+      "deploy": {
+        "WORKERS": 8
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "WORKLOAD": "uniform",
+        "START_RATE": 5,
+        "MAX_RATE": 450,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "w12",
+      "deploy": {
+        "WORKERS": 12
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "WORKLOAD": "uniform",
+        "START_RATE": 5,
+        "MAX_RATE": 650,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "w16",
+      "deploy": {
+        "WORKERS": 16
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "WORKLOAD": "uniform",
+        "START_RATE": 5,
+        "MAX_RATE": 850,
+        "DURATION": "5m"
+      }
+    }
+  ]
+}

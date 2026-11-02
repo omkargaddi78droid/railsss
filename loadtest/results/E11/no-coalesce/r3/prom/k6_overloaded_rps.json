@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e11-no-coalesce-r3\"}[30s]))","start":1793552639.998,"end":1793552700.558,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

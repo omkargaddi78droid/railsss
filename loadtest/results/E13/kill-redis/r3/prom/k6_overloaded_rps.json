@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e13-kill-redis-r3\"}[30s]))","start":1793561683.368,"end":1793562014.257,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

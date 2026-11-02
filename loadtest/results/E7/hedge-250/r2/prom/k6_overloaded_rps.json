@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e7-hedge-250-r2\"}[30s]))","start":1793549145.935,"end":1793549356.471,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

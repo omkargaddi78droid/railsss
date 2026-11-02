@@ -1,0 +1,90 @@
+{
+  "id": "E18",
+  "title": "Little's law and queueing",
+  "question": "Concurrency vs RPS × latency, and latency vs utilisation against M/M/c, over a load sweep of 20–100 % capacity.",
+  "base": "baseline",
+  "params": {
+    "CAPACITY": 1100
+  },
+  "overrides": {
+    "deploy": {
+      "API_HOSTS": "2",
+      "NODE_CLUSTER": "2"
+    },
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "u20",
+      "scenario": "load",
+      "k6": {
+        "RATE": 220,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "u40",
+      "scenario": "load",
+      "k6": {
+        "RATE": 440,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "u60",
+      "scenario": "load",
+      "k6": {
+        "RATE": 660,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "u80",
+      "scenario": "load",
+      "k6": {
+        "RATE": 880,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "u90",
+      "scenario": "load",
+      "k6": {
+        "RATE": 990,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "u100",
+      "scenario": "load",
+      "k6": {
+        "RATE": 1100,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "experiment": "E10",
+  "title": "Cache",
+  "variant": "nocache-s0.8-cache-rerun",
+  "repeat": 1,
+  "testid": "e10-nocache-s0.8-cache-rerun-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "CACHE_BACKEND": "none",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "WORKLOAD": "zipf",
+    "ZIPF_S": "0.8",
+    "RATE": "770",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.7
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-02T03:32:11.441Z",
+  "deploy_exit": 1,
+  "status": "deploy-failed",
+  "finished_at": "2026-11-02T03:32:13.385Z"
+}

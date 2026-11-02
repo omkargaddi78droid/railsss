@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e14-static8-r1\"}[30s]))","start":1793563020.299,"end":1793563350.979,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

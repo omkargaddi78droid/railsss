@@ -1,0 +1,27 @@
+{
+  "experiment": "E18",
+  "title": "Little's law and queueing",
+  "variant": "u100",
+  "repeat": 2,
+  "testid": "e18-u100-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "1100",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T21:35:09.396Z",
+  "deploy_exit": 1,
+  "status": "deploy-failed",
+  "finished_at": "2026-11-01T21:35:12.264Z"
+}

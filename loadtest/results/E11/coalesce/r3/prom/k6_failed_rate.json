@@ -1,0 +1,1 @@
+{"query":"max(k6_http_req_failed_rate{testid=\"e11-coalesce-r3\"})","start":1793552754.291,"end":1793552814.83,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1793552779,"0"],[1793552784,"0"],[1793552789,"0"],[1793552794,"0"],[1793552799,"0"],[1793552804,"0"],[1793552809,"0"],[1793552814,"0"]]}]}}}

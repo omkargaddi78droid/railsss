@@ -1,0 +1,28 @@
+{
+  "id": "E8",
+  "title": "Node tier scaling",
+  "question": "1–4 API hosts (16/14/12/10 workers: each extra API host is one worker host fewer) × 1 or 2 API processes: when does Node stop being the wall, and which split of the hosts gives the most capacity?",
+  "base": "baseline",
+  "params": {
+    "MAX_RATE": 1400
+  },
+  "overrides": {
+    "deploy": {},
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "gw2-cluster2",
+      "deploy": {
+        "API_HOSTS": 2,
+        "NODE_CLUSTER": 2
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "START_RATE": 5,
+        "MAX_RATE": 1400,
+        "DURATION": "5m"
+      }
+    }
+  ]
+}

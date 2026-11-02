@@ -1,0 +1,38 @@
+{
+  "experiment": "E14",
+  "title": "Elastic scaling",
+  "variant": "static16",
+  "repeat": 1,
+  "testid": "e14-static16-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "ENGINE_REGISTRY_KEY": "engines"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "399",
+    "DURATION": "5m"
+  },
+  "params": {
+    "CAPACITY": 570,
+    "LOAD": 0.7
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T20:12:36.768Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 16,
+  "started_at": "2026-11-01T20:12:41.979Z",
+  "ended_at": "2026-11-01T20:17:42.629Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [],
+  "duration_s": 300.64999985694885,
+  "status": "ok",
+  "finished_at": "2026-11-01T20:17:44.571Z"
+}

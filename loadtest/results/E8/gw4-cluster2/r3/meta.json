@@ -1,0 +1,39 @@
+{
+  "experiment": "E8",
+  "title": "Node tier scaling",
+  "variant": "gw4-cluster2",
+  "repeat": 3,
+  "testid": "e8-gw4-cluster2-r3",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "4",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "breakpoint",
+  "k6_env": {
+    "START_RATE": "5",
+    "MAX_RATE": "900",
+    "DURATION": "5m"
+  },
+  "params": {
+    "MAX_RATE": 900
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T12:46:34.720Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 10,
+  "started_at": "2026-11-01T12:46:38.981Z",
+  "ended_at": "2026-11-01T12:49:37.346Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 178.36500000953674,
+  "status": "ok",
+  "finished_at": "2026-11-01T12:49:39.095Z"
+}

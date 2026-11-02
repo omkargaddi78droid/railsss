@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 138" width="760" height="138" role="img" aria-label="E12: goodput under overload">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="138" fill="var(--surface)"/>
+<text class="title" x="16" y="26">E12: goodput under overload</text>
+<text class="sub" x="16" y="44">Successful requests per second, median of the repeats</text>
+<line x1="176" x2="176" y1="56" y2="92" stroke="var(--axis)"/>
+<text class="tick" x="176" y="110" text-anchor="middle">0</text>
+<line x1="304.5" x2="304.5" y1="56" y2="92" stroke="var(--grid)"/>
+<text class="tick" x="304.5" y="110" text-anchor="middle">200</text>
+<line x1="433" x2="433" y1="56" y2="92" stroke="var(--grid)"/>
+<text class="tick" x="433" y="110" text-anchor="middle">400</text>
+<line x1="561.5" x2="561.5" y1="56" y2="92" stroke="var(--grid)"/>
+<text class="tick" x="561.5" y="110" text-anchor="middle">600</text>
+<line x1="690" x2="690" y1="56" y2="92" stroke="var(--grid)"/>
+<text class="tick" x="690" y="110" text-anchor="middle">800</text>
+<text x="433" y="130" text-anchor="middle">successful requests per second</text>
+<text x="166" y="78" text-anchor="end">queue-unlimited-x1.5</text>
+<path d="M176 66h437.5717455050434a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-437.5717455050434z" fill="var(--s1)"><title>queue-unlimited-x1.5: 687</title></path>
+<text class="val" x="625.5717455050434" y="78">687</text>
+</svg>

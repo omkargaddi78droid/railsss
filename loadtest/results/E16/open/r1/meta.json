@@ -1,0 +1,41 @@
+{
+  "experiment": "E16",
+  "title": "Closed vs open loop",
+  "variant": "open",
+  "repeat": 1,
+  "testid": "e16-open-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "880",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.8,
+    "VUS": 0,
+    "MEAN_LATENCY_MS": 100
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T20:30:11.152Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T20:30:33.143Z",
+  "ended_at": "2026-11-01T20:33:34.171Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 181.02800011634827,
+  "status": "ok",
+  "finished_at": "2026-11-01T20:33:35.904Z"
+}

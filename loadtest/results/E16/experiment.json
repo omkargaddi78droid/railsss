@@ -1,0 +1,45 @@
+{
+  "id": "E16",
+  "title": "Closed vs open loop",
+  "question": "Same load with constant-arrival-rate and constant-vus: how much of the tail does the closed model hide?",
+  "base": "baseline",
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.8,
+    "VUS": 0,
+    "MEAN_LATENCY_MS": 100
+  },
+  "overrides": {
+    "deploy": {
+      "API_HOSTS": "2",
+      "NODE_CLUSTER": "2"
+    },
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "open",
+      "scenario": "load",
+      "k6": {
+        "RATE": 880,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    },
+    {
+      "name": "closed",
+      "scenario": "closed",
+      "k6": {
+        "VUS": 88,
+        "DURATION": "3m"
+      },
+      "deploy": {
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      }
+    }
+  ]
+}

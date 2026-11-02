@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" role="img" aria-label="E18: latency against utilisation">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="420" fill="var(--surface)"/>
+<text class="title" x="64" y="26">E18: latency against utilisation</text>
+<text class="sub" x="64" y="44">Mean client latency and the M/M/c prediction for the engine tier</text>
+<line x1="64" x2="736" y1="370" y2="370" stroke="var(--axis)"/>
+<text class="tick" x="56" y="374" text-anchor="end">0</text>
+<line x1="64" x2="736" y1="275.33333333333337" y2="275.33333333333337" stroke="var(--grid)"/>
+<text class="tick" x="56" y="279.33333333333337" text-anchor="end">50</text>
+<line x1="64" x2="736" y1="180.66666666666669" y2="180.66666666666669" stroke="var(--grid)"/>
+<text class="tick" x="56" y="184.66666666666669" text-anchor="end">100</text>
+<line x1="64" x2="736" y1="86" y2="86" stroke="var(--grid)"/>
+<text class="tick" x="56" y="90" text-anchor="end">150</text>
+<text class="tick" x="64" y="388" text-anchor="middle">0</text>
+<text class="tick" x="288" y="388" text-anchor="middle">50</text>
+<text class="tick" x="512" y="388" text-anchor="middle">100</text>
+<text class="tick" x="736" y="388" text-anchor="middle">150</text>
+<text x="400" y="410" text-anchor="middle">utilisation (%)</text>
+<text transform="translate(16 228) rotate(-90)" text-anchor="middle">mean latency (ms)</text>
+<circle cx="125.2" cy="341.7" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>measured: 15 at 13.7</title></circle>
+<circle cx="211.4" cy="337.4" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>measured: 17.2 at 32.9</title></circle>
+<circle cx="339.8" cy="330.7" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>measured: 20.7 at 61.6</title></circle>
+<circle cx="533.7" cy="318.0" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>measured: 27.5 at 105</title></circle>
+<circle cx="695.9" cy="305.9" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>measured: 33.8 at 141</title></circle>
+<circle cx="708.4" cy="86.0" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>measured: 150 at 144</title></circle>
+<path d="M125.2 353.5L211.4 350.2L339.8 345.0" fill="none" stroke="var(--s2)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>M/M/c</title></path>
+<circle cx="339.8" cy="345.0" r="4" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"><title>M/M/c: 13.2 at 61.6</title></circle>
+<line x1="64" x2="80" y1="62" y2="62" stroke="var(--s1)" stroke-width="3" stroke-linecap="round"/>
+<text x="86" y="66">measured</text>
+<line x1="150.8" x2="166.8" y1="62" y2="62" stroke="var(--s2)" stroke-width="3" stroke-linecap="round"/>
+<text x="172.8" y="66">M/M/c</text>
+</svg>

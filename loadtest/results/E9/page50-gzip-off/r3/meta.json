@@ -1,0 +1,41 @@
+{
+  "experiment": "E9",
+  "title": "Payload cost",
+  "variant": "page50-gzip-off",
+  "repeat": 3,
+  "testid": "e9-page50-gzip-off-r3",
+  "base": "baseline",
+  "deploy_overrides": {
+    "GZIP": "off",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "breakpoint",
+  "k6_env": {
+    "PAGE_SIZE": "50",
+    "START_RATE": "5",
+    "MAX_RATE": "1650",
+    "DURATION": "5m"
+  },
+  "params": {
+    "MAX_RATE": 1650
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T16:38:02.252Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T16:38:05.662Z",
+  "ended_at": "2026-11-01T16:39:41.965Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 96.30299997329712,
+  "status": "ok",
+  "finished_at": "2026-11-01T16:39:42.445Z"
+}

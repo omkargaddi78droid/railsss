@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e8-gw4-cluster2-r1\"}[30s]))","start":1793536965.467,"end":1793537119.762,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

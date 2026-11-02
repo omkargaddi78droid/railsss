@@ -1,0 +1,43 @@
+{
+  "experiment": "E11",
+  "title": "Cache stampede",
+  "variant": "coalesce",
+  "repeat": 1,
+  "testid": "e11-coalesce-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "CACHE_COALESCE": "true",
+    "REDIS_LOCK_MS": "0",
+    "NODE_CLUSTER": "2",
+    "API_HOSTS": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "WORKLOAD": "zipf",
+    "ZIPF_S": "3",
+    "RATE": "550",
+    "DURATION": "30s"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.5
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T17:04:46.057Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T17:05:00.136Z",
+  "ended_at": "2026-11-01T17:05:30.701Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [],
+  "duration_s": 30.56500005722046,
+  "status": "ok",
+  "finished_at": "2026-11-01T17:05:31.175Z"
+}

@@ -1,0 +1,39 @@
+{
+  "experiment": "E2",
+  "title": "Placement and hyperthreading",
+  "variant": "spread-8hosts",
+  "repeat": 1,
+  "testid": "e2-spread-8hosts-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "WORKERS": "8",
+    "WORKER_PLACEMENT": "spread"
+  },
+  "scenario": "breakpoint",
+  "k6_env": {
+    "START_RATE": "5",
+    "MAX_RATE": "500",
+    "DURATION": "5m"
+  },
+  "params": {
+    "MAX_RATE": 500
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T13:19:42.079Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 8,
+  "started_at": "2026-11-01T13:19:57.587Z",
+  "ended_at": "2026-11-01T13:24:58.069Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [],
+  "duration_s": 300.48200011253357,
+  "status": "ok",
+  "finished_at": "2026-11-01T13:24:59.811Z"
+}

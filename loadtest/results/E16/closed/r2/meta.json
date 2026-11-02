@@ -1,0 +1,30 @@
+{
+  "experiment": "E16",
+  "title": "Closed vs open loop",
+  "variant": "closed",
+  "repeat": 2,
+  "testid": "e16-closed-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "closed",
+  "k6_env": {
+    "VUS": "88",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.8,
+    "VUS": 0,
+    "MEAN_LATENCY_MS": 100
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T20:42:57.654Z",
+  "deploy_exit": 1,
+  "status": "deploy-failed",
+  "finished_at": "2026-11-01T20:43:00.489Z"
+}

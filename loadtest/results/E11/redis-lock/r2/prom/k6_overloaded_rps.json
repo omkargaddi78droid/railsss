@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e11-redis-lock-r2\"}[30s]))","start":1793552834.114,"end":1793552894.69,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

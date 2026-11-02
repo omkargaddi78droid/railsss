@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e2-pack-4hosts-r1\"}[30s]))","start":1793539497.892,"end":1793539828.383,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

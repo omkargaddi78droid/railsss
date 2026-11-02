@@ -1,0 +1,41 @@
+{
+  "experiment": "E15",
+  "title": "K and label budget",
+  "variant": "k20-labels200k",
+  "repeat": 2,
+  "testid": "e15-k20-labels200k-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "TOP_K": "20",
+    "MAX_LABELS": "200000",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "breakpoint",
+  "k6_env": {
+    "START_RATE": "5",
+    "MAX_RATE": "1650",
+    "DURATION": "5m"
+  },
+  "params": {
+    "MAX_RATE": 1650
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T17:44:21.222Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T17:44:24.757Z",
+  "ended_at": "2026-11-01T17:49:07.336Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 282.5789999961853,
+  "status": "ok",
+  "finished_at": "2026-11-01T17:49:09.131Z"
+}

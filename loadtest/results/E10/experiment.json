@@ -1,0 +1,203 @@
+{
+  "id": "E10",
+  "title": "Cache",
+  "question": "No cache vs Redis vs Redis + cache-warmer, under zipf popularity s = 0, 0.8, 1.1, 1.4.",
+  "base": "baseline",
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.7
+  },
+  "overrides": {
+    "deploy": {
+      "API_HOSTS": "2",
+      "NODE_CLUSTER": "2"
+    },
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "nocache-s0-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "none",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 0,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "nocache-s0.8-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "none",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 0.8,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "nocache-s1.1-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "none",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 1.1,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "nocache-s1.4-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "none",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 1.4,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "redis-s0-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 0,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "redis-s0.8-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 0.8,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "redis-s1.1-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 1.1,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "redis-s1.4-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 1.4,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "prewarm-s0-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "PREWARM": "true",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 0,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "prewarm-s0.8-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "PREWARM": "true",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 0.8,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "prewarm-s1.1-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "PREWARM": "true",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 1.1,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    },
+    {
+      "name": "prewarm-s1.4-cache-rerun",
+      "deploy": {
+        "CACHE_BACKEND": "redis",
+        "PREWARM": "true",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 1.4,
+        "RATE": 770,
+        "DURATION": "3m"
+      }
+    }
+  ]
+}

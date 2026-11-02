@@ -1,0 +1,4 @@
+- E8 completed. Study continues on gw2-cluster2.
+- C16 = 570 (E1 w16).
+- C14 = 1100 (E8 gw2-cluster2).
+- Selected layout: API_HOSTS=2 NODE_CLUSTER=2.

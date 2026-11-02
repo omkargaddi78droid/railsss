@@ -1,0 +1,84 @@
+{
+  "id": "E14",
+  "title": "Elastic scaling",
+  "question": "Start with 8 workers above their capacity, add 8 through the Redis registry at 60 s: time to benefit, including cold start.",
+  "base": "baseline",
+  "params": {
+    "CAPACITY": 570,
+    "LOAD": 0.7
+  },
+  "overrides": {
+    "deploy": {},
+    "k6": {}
+  },
+  "variants": [
+    {
+      "deploy": {
+        "ENGINE_REGISTRY_KEY": "engines"
+      },
+      "scenario": "load",
+      "k6": {
+        "RATE": 399,
+        "DURATION": "5m"
+      },
+      "name": "join",
+      "setup": [
+        {
+          "kind": "kill-workers",
+          "count": 8
+        },
+        {
+          "kind": "registry-set",
+          "count": 8
+        }
+      ],
+      "during": [
+        {
+          "at": 60,
+          "action": {
+            "kind": "start-workers"
+          }
+        },
+        {
+          "at": 60,
+          "action": {
+            "kind": "registry-set",
+            "count": "all"
+          }
+        }
+      ]
+    },
+    {
+      "deploy": {
+        "ENGINE_REGISTRY_KEY": "engines"
+      },
+      "scenario": "load",
+      "k6": {
+        "RATE": 399,
+        "DURATION": "5m"
+      },
+      "name": "static8",
+      "setup": [
+        {
+          "kind": "kill-workers",
+          "count": 8
+        },
+        {
+          "kind": "registry-set",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "deploy": {
+        "ENGINE_REGISTRY_KEY": "engines"
+      },
+      "scenario": "load",
+      "k6": {
+        "RATE": 399,
+        "DURATION": "5m"
+      },
+      "name": "static16"
+    }
+  ]
+}

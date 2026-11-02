@@ -1,0 +1,38 @@
+{
+  "experiment": "E18",
+  "title": "Little's law and queueing",
+  "variant": "u60",
+  "repeat": 2,
+  "testid": "e18-u60-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "660",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T21:07:10.149Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T21:07:13.634Z",
+  "ended_at": "2026-11-01T21:10:14.407Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [],
+  "duration_s": 180.77300000190735,
+  "status": "ok",
+  "finished_at": "2026-11-01T21:10:16.196Z"
+}

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 198" width="760" height="198" role="img" aria-label="E2: maximum RPS within the SLO">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="198" fill="var(--surface)"/>
+<text class="title" x="16" y="26">E2: maximum RPS within the SLO</text>
+<text class="sub" x="16" y="44">Median of the repeats; the line spans min–max</text>
+<line x1="142" x2="142" y1="56" y2="152" stroke="var(--axis)"/>
+<text class="tick" x="142" y="170" text-anchor="middle">0</text>
+<line x1="251.60000000000002" x2="251.60000000000002" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="251.60000000000002" y="170" text-anchor="middle">100</text>
+<line x1="361.20000000000005" x2="361.20000000000005" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="361.20000000000005" y="170" text-anchor="middle">200</text>
+<line x1="470.8" x2="470.8" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="470.8" y="170" text-anchor="middle">300</text>
+<line x1="580.4000000000001" x2="580.4000000000001" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="580.4000000000001" y="170" text-anchor="middle">400</text>
+<line x1="690" x2="690" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="690" y="170" text-anchor="middle">500</text>
+<text x="416" y="190" text-anchor="middle">requests per second</text>
+<text x="132" y="78" text-anchor="end">spread-8hosts</text>
+<path d="M142 66h512.0838289888627a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-512.0838289888627z" fill="var(--s1)"><title>spread-8hosts: 471</title></path>
+<text class="val" x="666.0838289888627" y="78">471</text>
+<text x="132" y="108" text-anchor="end">pack-4hosts</text>
+<path d="M142 96h512.04064a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-512.04064z" fill="var(--s1)"><title>pack-4hosts: 471</title></path>
+<text class="val" x="666.04064" y="108">471</text>
+<text x="132" y="138" text-anchor="end">unpinned-8hosts</text>
+<path d="M142 126h520.238423253036a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-520.238423253036z" fill="var(--s1)"><title>unpinned-8hosts: 478</title></path>
+<text class="val" x="674.238423253036" y="138">478</text>
+</svg>

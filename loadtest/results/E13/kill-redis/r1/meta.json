@@ -1,0 +1,65 @@
+{
+  "experiment": "E13",
+  "title": "Failure injection",
+  "variant": "kill-redis",
+  "repeat": 1,
+  "testid": "e13-kill-redis-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "660",
+    "DURATION": "5m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.6
+  },
+  "setup": [],
+  "during": [
+    {
+      "at": 60,
+      "action": {
+        "kind": "kill-redis"
+      }
+    },
+    {
+      "at": 180,
+      "action": {
+        "kind": "start-redis"
+      }
+    }
+  ],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T19:24:42.769Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T19:24:46.247Z",
+  "ended_at": "2026-11-01T19:29:47.172Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [
+    {
+      "at": 60.00099992752075,
+      "action": "kill-redis",
+      "ok": true,
+      "took_s": 0.1100001335144043
+    },
+    {
+      "at": 180.00099992752075,
+      "action": "start-redis",
+      "ok": true,
+      "took_s": 0.20600008964538574
+    }
+  ],
+  "duration_s": 300.9249999523163,
+  "status": "ok",
+  "finished_at": "2026-11-01T19:29:48.888Z"
+}

@@ -6,7 +6,31 @@ SLO: p99 < 500 ms and errors < 0.1 % (429 counts as an error). Capacity of a bre
 
 ## Validity
 
-18 repeats used.
+158 repeats used.
+
+Excluded:
+
+- E10/nocache-s0/r2: status deploy-failed
+- E10/nocache-s0.8-cache-rerun/r1: status deploy-failed
+- E12/queue-unlimited-x1.5/r2: status deploy-failed
+- E16/closed/r2: status deploy-failed
+- E18/u100/r2: status deploy-failed
+- E4/random-uniform/r2: status deploy-failed
+
+Cache hits above 2 % on a uniform workload (the run was not cold):
+
+- E4/round_robin-heavy/r1
+- E4/round_robin-heavy/r2
+- E4/round_robin-heavy/r3
+- E7/hedge-100/r1
+- E7/hedge-100/r2
+- E7/hedge-100/r3
+- E7/hedge-250/r1
+- E7/hedge-250/r2
+- E7/hedge-250/r3
+- E7/hedge-off/r1
+- E7/hedge-off/r2
+- E7/hedge-off/r3
 
 ## E1 Worker count scaling
 
@@ -51,19 +75,58 @@ USL fit, X(N) = λN / (1 + σ(N − 1) + κN(N − 1)):
 
 8 workers: one per host (sibling vCPU idle) vs two HT siblings per host on 4 hosts vs one unpinned per host.
 
-Not run yet.
+| Variant | Config | Repeats | Max RPS within SLO, median (min–max) | Spread (CV) | SLO broken by | API CPU | Engine CPU (sum) | nginx CPU | Truncated searches |
+|---|---|---|---|---|---|---|---|---|---|
+| spread-8hosts | `WORKERS=8 WORKER_PLACEMENT=spread START_RATE=5 MAX_RATE=500 DURATION=5m` | 1 | ≥ 471 | 0.0 % | never (lower bound) | 0.97 | 3.34 | 0.07 | 2.5 % |
+| pack-4hosts | `WORKERS=8 WORKER_PLACEMENT=pack START_RATE=5 MAX_RATE=500 DURATION=5m` | 1 | ≥ 471 | 0.0 % | never (lower bound) | 0.94 | 4.14 | 0.07 | 2.5 % |
+| unpinned-8hosts | `WORKERS=8 WORKERS_PER_HOST=1 START_RATE=5 MAX_RATE=500 DURATION=5m` | 1 | ≥ 478 | 0.0 % | never (lower bound) | 1.01 | 3.41 | 0.08 | 2.5 % |
+
+CPU is in cores, averaged over the 30 s before the knee. "k6 abort" means k6 stopped the ramp on its own client-side threshold before two server-side steps broke the SLO; the value is the highest rate reached within the SLO.
+
+![E2 capacity by variant](E2-capacity.svg)
+
+![E2 p99 latency against load](E2-latency-vs-load.svg)
 
 ## E3 Threads per worker and pool concurrency
 
 1, 2 or 4 httplib threads on one pinned vCPU, with the pool sending 1 or 2 requests at a time to each worker.
 
-Not run yet.
+| Variant | Config | Repeats | Max RPS within SLO, median (min–max) | Spread (CV) | SLO broken by | API CPU | Engine CPU (sum) | nginx CPU | Truncated searches |
+|---|---|---|---|---|---|---|---|---|---|
+| c1-t1 | `ENGINE_CONCURRENCY=1 ENGINE_THREADS=1 START_RATE=5 MAX_RATE=900 DURATION=5m` | 2 | 52 (49–56) | 9.6 % | k6 abort, errors | 0.1 | 0.34 | 0.01 | 2.6 % |
+| c1-t2 | `ENGINE_CONCURRENCY=1 ENGINE_THREADS=2 START_RATE=5 MAX_RATE=900 DURATION=5m` | 2 | 557 (549–564) | 1.9 % | errors | 1.15 | 4.63 | 0.09 | 2.5 % |
+| c1-t4 | `ENGINE_CONCURRENCY=1 ENGINE_THREADS=4 START_RATE=5 MAX_RATE=900 DURATION=5m` | 2 | 548 (548–549) | 0.1 % | errors | 1.12 | 4.61 | 0.09 | 2.5 % |
+| c2-t1 | `ENGINE_CONCURRENCY=2 ENGINE_THREADS=1 START_RATE=5 MAX_RATE=900 DURATION=5m` | 2 | 47 (34–60) | 38.1 % ⚠ | k6 abort | 0.15 | 0.45 | 0.01 | 2.6 % |
+| c2-t2 | `ENGINE_CONCURRENCY=2 ENGINE_THREADS=2 START_RATE=5 MAX_RATE=900 DURATION=5m` | 2 | 526 (519–533) | 2.0 % | k6 abort, errors | 1.06 | 4.18 | 0.08 | 2.4 % |
+| c2-t4 | `ENGINE_CONCURRENCY=2 ENGINE_THREADS=4 START_RATE=5 MAX_RATE=900 DURATION=5m` | 2 | 638 (628–648) | 2.2 % | errors, k6 abort | 1.21 | 5.43 | 0.09 | 2.5 % |
+
+CPU is in cores, averaged over the 30 s before the knee. "k6 abort" means k6 stopped the ramp on its own client-side threshold before two server-side steps broke the SLO; the value is the highest rate reached within the SLO.
+
+![E3 capacity by variant](E3-capacity.svg)
+
+![E3 p99 latency against load](E3-latency-vs-load.svg)
 
 ## E4 Load-balancing strategy
 
 Tail latency of each LB strategy at 70 % load, for uniform queries and a heavy-tailed mix. Run it on the layout chosen in E8: with several API processes, least_reported (worker-reported load) vs least_outstanding and p2c.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| round_robin-uniform | `LB_STRATEGY=round_robin API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=uniform RATE=770 DURATION=3m` | 3 | 757 (757–761) | 14 (14–15) | 3,722 (3,619–3,774) | 4,983 (4,895–5,002) | 5,029 (5,015–5,049) | 21.36 % | 21.27 % | 0.0 % | 107,292 | 1.61 | 5.73 |
+| round_robin-heavy | `LB_STRATEGY=round_robin API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=uniform HEAVY_FRAC=0.1 RATE=385 DURATION=3m` | 3 | 385 (385–385) | 11 (11–11) | 111 (110–112) | 242 (241–245) | 522 (489–2,767) | 0.00 % | 0.00 % | 9.8 % | 61,583 | 1.16 | 3.01 |
+| random-uniform | `LB_STRATEGY=random API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=uniform RATE=770 DURATION=3m` | 1 | 757 | 11 | 4,062 | 5,003 | 5,136 | 37.87 % | 37.62 % | 0.0 % | 84,747 | 1.36 | 4.27 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| round_robin-uniform | 0 | 0 | 107,670 | 0 | 11 | 0 | 0 | 29,474 | 0 |
+| round_robin-heavy | 1 | 0 | 61,376 | 0 | 6,652 | 0 | 0 | 0 | 0 |
+| random-uniform | 0 | 0 | 85,696 | 0 | 9 | 0 | 0 | 51,801 | 0 |
+
+![E4 p99 by variant](E4-p99.svg)
+
+![E4 max latency by variant](E4-max.svg)
 
 ## E5 Where to balance (nginx vs Node pool)
 
@@ -81,61 +144,255 @@ Not run: no cost predictor or pool split exists in the API yet.
 
 p99 gain of hedging after 100 or 250 ms against the extra engine load, on the heavy-tailed mix.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| hedge-off | `HEDGE_AFTER_MS=0 API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=uniform HEAVY_FRAC=0.1 RATE=330 DURATION=3m` | 3 | 330 (330–330) | 10 (10–11) | 105 (103–105) | 221 (219–221) | 497 (448–560) | 0.00 % | 0.00 % | 9.7 % | 53,010 | 1.03 | 2.55 |
+| hedge-100 | `HEDGE_AFTER_MS=100 API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=uniform HEAVY_FRAC=0.1 RATE=330 DURATION=3m` | 3 | 330 (330–330) | 10 (10–11) | 112 (109–114) | 276 (246–280) | 766 (657–935) | 0.00 % | 0.00 % | 9.7 % | 53,452 | 1 | 2.92 |
+| hedge-250 | `HEDGE_AFTER_MS=250 API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=uniform HEAVY_FRAC=0.1 RATE=330 DURATION=3m` | 3 | 330 (330–330) | 11 (11–11) | 104 (103–105) | 221 (212–230) | 485 (468–490) | 0.00 % | 0.00 % | 9.7 % | 52,763 | 1.06 | 2.57 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| hedge-off | 1 | 0 | 52,933 | 0 | 5,688 | 0 | 0 | 0 | 0 |
+| hedge-100 | 2 | 0 | 52,303 | 0 | 5,671 | 617 | 45 | 0 | 0 |
+| hedge-250 | 1 | 0 | 52,301 | 0 | 5,644 | 27 | 0 | 0 | 0 |
+
+![E7 p99 by variant](E7-p99.svg)
 
 ## E8 Node tier scaling
 
 1–4 API hosts (16/14/12/10 workers: each extra API host is one worker host fewer) × 1 or 2 API processes: when does Node stop being the wall, and which split of the hosts gives the most capacity?
 
-Not run yet.
+| Variant | Config | Repeats | Max RPS within SLO, median (min–max) | Spread (CV) | SLO broken by | API CPU | Engine CPU (sum) | nginx CPU | Truncated searches |
+|---|---|---|---|---|---|---|---|---|---|
+| gw2-cluster2 | `API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1400 DURATION=5m` | 3 | 1,108 (1,101–1,121) | 0.9 % | k6 abort, errors | 2.8 | 11.03 | 0.15 | 2.5 % |
+| gw1-cluster1 | `NODE_CLUSTER=1 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | 637 (636–654) | 1.6 % | errors, k6 abort | 1.26 | 5.43 | 0.09 | 2.5 % |
+| gw1-cluster2 | `NODE_CLUSTER=2 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | 723 (719–734) | 1.1 % | errors, k6 abort | 1.7 | 6.27 | 0.11 | 2.5 % |
+| gw2-cluster1 | `API_HOSTS=2 NODE_CLUSTER=1 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | ≥ 861 (847–861) | 0.9 % | never (lower bound) | 1.71 | 7.57 | 0.12 | 2.5 % |
+| gw3-cluster1 | `API_HOSTS=3 NODE_CLUSTER=1 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | ≥ 861 (860–861) | 0.0 % | never (lower bound) | 1.83 | 7.99 | 0.11 | 2.5 % |
+| gw3-cluster2 | `API_HOSTS=3 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | ≥ 859 (847–860) | 0.9 % | never (lower bound) | 1.99 | 8.13 | 0.1 | 2.5 % |
+| gw4-cluster1 | `API_HOSTS=4 NODE_CLUSTER=1 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | 728 (728–739) | 0.8 % | errors | 1.64 | 7.18 | 0.09 | 2.5 % |
+| gw4-cluster2 | `API_HOSTS=4 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=900 DURATION=5m` | 3 | 310 (191–474) | 43.7 % ⚠ | errors | 1.14 | 2.45 | 0.04 | 2.5 % |
+
+CPU is in cores, averaged over the 30 s before the knee. "k6 abort" means k6 stopped the ramp on its own client-side threshold before two server-side steps broke the SLO; the value is the highest rate reached within the SLO.
+
+![E8 capacity by variant](E8-capacity.svg)
+
+![E8 p99 latency against load](E8-latency-vs-load.svg)
 
 ## E9 Payload cost
 
 Rendered page size (10 vs 50 journeys) and gzip at nginx: bytes on the wire, API CPU per request, capacity.
 
-Not run yet.
+| Variant | Config | Repeats | Max RPS within SLO, median (min–max) | Spread (CV) | SLO broken by | API CPU | Engine CPU (sum) | nginx CPU | Truncated searches |
+|---|---|---|---|---|---|---|---|---|---|
+| page10-gzip-off | `GZIP=off API_HOSTS=2 NODE_CLUSTER=2 PAGE_SIZE=10 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,031 (998–1,060) | 3.0 % | k6 abort | 2.53 | 9.56 | 0.14 | 2.5 % |
+| page10-gzip-on | `GZIP=on API_HOSTS=2 NODE_CLUSTER=2 PAGE_SIZE=10 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,000 (977–1,016) | 2.0 % | errors | 2.43 | 9.59 | 0.45 | 2.5 % |
+| page50-gzip-off | `GZIP=off API_HOSTS=2 NODE_CLUSTER=2 PAGE_SIZE=50 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 449 (446–449) | 0.4 % | k6 abort | 2.51 | 3.24 | 0.12 | 2.5 % |
+| page50-gzip-on | `GZIP=on API_HOSTS=2 NODE_CLUSTER=2 PAGE_SIZE=50 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 291 (286–294) | 1.4 % | k6 abort | 1.32 | 1.88 | 0.39 | 2.4 % |
+
+CPU is in cores, averaged over the 30 s before the knee. "k6 abort" means k6 stopped the ramp on its own client-side threshold before two server-side steps broke the SLO; the value is the highest rate reached within the SLO.
+
+![E9 capacity by variant](E9-capacity.svg)
+
+![E9 p99 latency against load](E9-latency-vs-load.svg)
 
 ## E10 Cache
 
 No cache vs Redis vs Redis + cache-warmer, under zipf popularity s = 0, 0.8, 1.1, 1.4.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| nocache-s0-cache-rerun | `CACHE_BACKEND=none API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=zipf ZIPF_S=0 RATE=770 DURATION=3m` | 3 | 757 (756–757) | 44 (38–50) | 5,001 (4,795–5,001) | 5,009 (5,005–5,011) | 5,121 (5,058–5,159) | 27.12 % | 26.08 % | 0.0 % | 100,443 | 1.38 | 7.7 |
+| nocache-s0 | `CACHE_BACKEND=none API_HOSTS=2 NODE_CLUSTER=2 WORKLOAD=zipf ZIPF_S=0 RATE=770 DURATION=3m` | 1 | 757 | 46 | 5,001 | 5,005 | 5,238 | 22.36 % | 21.32 % | 0.0 % | 107,203 | 1.07 | 7.83 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| nocache-s0-cache-rerun | 0 | 0 | 135,032 | 0 | 0 | 0 | 0 | 35,622 | 0 |
+| nocache-s0 | 0 | 0 | 136,394 | 0 | 0 | 0 | 0 | 29,038 | 0 |
+
+![E10 p99 by variant](E10-p99.svg)
+
+![E10 cache hit rate by variant](E10-cache-hit.svg)
 
 ## E11 Cache stampede
 
 A cold burst of mostly identical queries (zipf s=3) on 2 API processes: engine calls per distinct query with no coalescing, in-process coalescing, and the cross-process Redis lock.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| no-coalesce | `CACHE_COALESCE=false REDIS_LOCK_MS=0 NODE_CLUSTER=2 API_HOSTS=2 WORKLOAD=zipf ZIPF_S=3 RATE=550 DURATION=30s` | 3 | 550 (550–550) | 3 (3–3) | 56 (47–89) | 113 (88–166) | 154 (134–186) | 0.00 % | 0.00 % | 99.7 % | 59 | 0.91 | 0.1 |
+| coalesce | `CACHE_COALESCE=true REDIS_LOCK_MS=0 NODE_CLUSTER=2 API_HOSTS=2 WORKLOAD=zipf ZIPF_S=3 RATE=550 DURATION=30s` | 3 | 550 (550–550) | 3 (3–3) | 58 (55–80) | 117 (108–151) | 159 (135–282) | 0.00 % | 0.00 % | 99.8 % | 21 | 0.95 | 0.11 |
+| redis-lock | `CACHE_COALESCE=true REDIS_LOCK_MS=2000 NODE_CLUSTER=2 API_HOSTS=2 WORKLOAD=zipf ZIPF_S=3 RATE=550 DURATION=30s` | 3 | 550 (550–550) | 3 (3–3) | 58 (52–63) | 126 (120–130) | 224 (126–341) | 0.00 % | 0.00 % | 99.8 % | 22 | 0.84 | 0.11 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| no-coalesce | 0 | 0 | 61 | 0 | 14,589 | 0 | 0 | 0 | 0 |
+| coalesce | 476 | 0 | 19 | 0 | 13,562 | 0 | 0 | 0 | 0 |
+| redis-lock | 330 | 0 | 18 | 0 | 13,478 | 0 | 0 | 0 | 0 |
+
+![E11 p99 by variant](E11-p99.svg)
 
 ## E12 Overload behaviour
 
 Goodput and latency at 1.5× and 2× capacity: unlimited queue, queue cap with 429, short timeout, and a retry storm.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| queue-unlimited-x1.5 | `MAX_QUEUE=-1 API_HOSTS=2 NODE_CLUSTER=2 RATE=1650 DURATION=2m` | 1 | 1,582 | 275 | 5,377 | 6,004 | 7,228 | 56.55 % | 0.00 % | 0.0 % | 89,593 | 2.14 | 7.12 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| queue-unlimited-x1.5 | 0 | 0 | 85,563 | 62 | 2 | 0 | 0 | 0 | 0 |
+
+![E12 p99 by variant](E12-p99.svg)
+
+![E12 goodput by variant](E12-goodput.svg)
 
 ## E13 Failure injection
 
 Kill 1, 4 or 8 workers (SIGKILL) or Redis mid-run: detection time, error burst, recovery after restart.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| kill1 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=660 DURATION=5m` | 3 | 660 (660–660) | 13 (13–13) | 153 (152–157) | 315 (313–318) | 788 (702–790) | 0.00 % | 0.00 % | 0.0 % | 194,647 | 1.7 | 5.98 |
+| kill4 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=660 DURATION=5m` | 3 | 660 (660–660) | 13 (13–13) | 165 (161–166) | 340 (333–351) | 1,021 (979–1,152) | 0.00 % | 0.00 % | 0.0 % | 194,083 | 1.68 | 5.9 |
+| kill8 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=660 DURATION=5m` | 3 | 660 (660–660) | 14 (14–14) | 486 (454–1,215) | 4,454 (4,104–4,958) | 5,014 (5,012–5,015) | 3.08 % | 2.59 % | 0.0 % | 187,882 | 1.64 | 5.29 |
+| kill-redis | `API_HOSTS=2 NODE_CLUSTER=2 RATE=660 DURATION=5m` | 3 | 660 (660–660) | 26 (26–26) | 180 (179–181) | 338 (334–339) | 947 (900–1,100) | 0.00 % | 0.00 % | 0.0 % | 194,612 | 1.68 | 6.06 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| kill1 | 0 | 0 | 194,669 | 0 | 30 | 0 | 0 | 0 | 10 |
+| kill4 | 0 | 0 | 194,660 | 0 | 30 | 0 | 0 | 0 | 37 |
+| kill8 | 0 | 0 | 188,580 | 0 | 30 | 0 | 0 | 5,121 | 994 |
+| kill-redis | 0 | 0 | 194,689 | 159,949 | 8 | 0 | 0 | 0 | 0 |
+
+![E13 p99 by variant](E13-p99.svg)
+
+![E13 kill1 requests over time](E13-kill1-rps.svg)
+
+![E13 kill1 p99 over time](E13-kill1-p99.svg)
+
+![E13 kill4 requests over time](E13-kill4-rps.svg)
+
+![E13 kill4 p99 over time](E13-kill4-p99.svg)
+
+![E13 kill8 requests over time](E13-kill8-rps.svg)
+
+![E13 kill8 p99 over time](E13-kill8-p99.svg)
+
+![E13 kill-redis requests over time](E13-kill-redis-rps.svg)
+
+![E13 kill-redis p99 over time](E13-kill-redis-p99.svg)
+
+| Variant | Actions (repeat 1) | Detection (s) | Failed requests | p99 back under SLO after (s) | Worst windowed p99 (ms) | Errors (median) |
+|---|---|---|---|---|---|---|
+| kill1 | kill-workers 1 @ 60 s, start-workers @ 180 s | 5 | 0 | 0 | 222 | 0.00 % |
+| kill4 | kill-workers 4 @ 60 s, start-workers @ 180 s | 5 | 13 | 0 | 217 | 0.00 % |
+| kill8 | kill-workers 8 @ 60 s, start-workers @ 180 s | 5 | 4,952 | 155 | 4,710 | 3.08 % |
+| kill-redis | kill-redis @ 60 s, start-redis @ 180 s | – | 0 | 0 | 238 | 0.00 % |
+
+Detection is the time from the first action until the pool reports fewer healthy workers. Failed requests integrate the non-2xx rate. All series are sampled every 5 s over 30 s windows, so times are accurate to about ±5 s.
 
 ## E14 Elastic scaling
 
 Start with 8 workers above their capacity, add 8 through the Redis registry at 60 s: time to benefit, including cold start.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| join | `ENGINE_REGISTRY_KEY=engines RATE=399 DURATION=5m` | 3 | 399 (399–399) | 12 (12–12) | 92 (92–93) | 172 (169–174) | 371 (368–402) | 0.00 % | 0.00 % | 0.0 % | 117,463 | 0.87 | 3.34 |
+| static8 | `ENGINE_REGISTRY_KEY=engines RATE=399 DURATION=5m` | 3 | 399 (399–399) | 11 (11–11) | 83 (83–87) | 157 (154–198) | 326 (312–362) | 0.00 % | 0.00 % | 0.0 % | 117,697 | 0.87 | 2.96 |
+| static16 | `ENGINE_REGISTRY_KEY=engines RATE=399 DURATION=5m` | 3 | 399 (399–399) | 12 (12–12) | 93 (93–93) | 173 (171–175) | 379 (368–383) | 0.00 % | 0.00 % | 0.0 % | 117,730 | 0.87 | 3.42 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| join | 0 | 0 | 117,693 | 0 | 12 | 0 | 0 | 0 | 0 |
+| static8 | 0 | 0 | 117,695 | 0 | 12 | 0 | 0 | 0 | 0 |
+| static16 | 0 | 0 | 117,579 | 0 | 12 | 0 | 0 | 0 | 0 |
+
+![E14 p99 by variant](E14-p99.svg)
+
+![E14 join requests over time](E14-join-rps.svg)
+
+![E14 join p99 over time](E14-join-p99.svg)
+
+![E14 static8 requests over time](E14-static8-rps.svg)
+
+![E14 static8 p99 over time](E14-static8-p99.svg)
+
+![E14 static16 requests over time](E14-static16-rps.svg)
+
+![E14 static16 p99 over time](E14-static16-p99.svg)
+
+| Variant | Actions (repeat 1) | Detection (s) | Failed requests | p99 back under SLO after (s) | Worst windowed p99 (ms) | Errors (median) |
+|---|---|---|---|---|---|---|
+| join | start-workers @ 60 s, registry-set all @ 61 s | – | 0 | 0 | 98 | 0.00 % |
+| static8 | – | – | 0 | – | 95 | 0.00 % |
+| static16 | – | – | 0 | – | 99 | 0.00 % |
+
+Detection is the time from the first action until the pool reports fewer healthy workers. Failed requests integrate the non-2xx rate. All series are sampled every 5 s over 30 s windows, so times are accurate to about ±5 s.
 
 ## E15 K and label budget
 
 Capacity against completeness (search_complete rate) for TOP_K 10/20/50 and MAX_LABELS 200k/500k.
 
-Not run yet.
+| Variant | Config | Repeats | Max RPS within SLO, median (min–max) | Spread (CV) | SLO broken by | API CPU | Engine CPU (sum) | nginx CPU | Truncated searches |
+|---|---|---|---|---|---|---|---|---|---|
+| k10-labels200k | `TOP_K=10 MAX_LABELS=200000 API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,442 (1,436–1,464) | 1.0 % | errors, k6 abort | 3.34 | 4.22 | 0.2 | 0.6 % |
+| k10-labels500k | `TOP_K=10 MAX_LABELS=500000 API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,461 (1,435–1,463) | 1.1 % | errors | 3.36 | 4.69 | 0.2 | 0.4 % |
+| k20-labels200k | `TOP_K=20 MAX_LABELS=200000 API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,450 (1,411–1,451) | 1.6 % | errors | 3.45 | 5.63 | 0.19 | 1.5 % |
+| k20-labels500k | `TOP_K=20 MAX_LABELS=500000 API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,427 (1,398–1,428) | 1.2 % | k6 abort, errors | 3.3 | 6.39 | 0.19 | 0.8 % |
+| k50-labels200k | `TOP_K=50 MAX_LABELS=200000 API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,277 (1,247–1,302) | 2.1 % | k6 abort, errors | 3.3 | 9.71 | 0.18 | 5.2 % |
+| k50-labels500k | `TOP_K=50 MAX_LABELS=500000 API_HOSTS=2 NODE_CLUSTER=2 START_RATE=5 MAX_RATE=1650 DURATION=5m` | 3 | 1,058 (1,058–1,073) | 0.8 % | errors, k6 abort | 2.61 | 10.5 | 0.14 | 2.5 % |
+
+CPU is in cores, averaged over the 30 s before the knee. "k6 abort" means k6 stopped the ramp on its own client-side threshold before two server-side steps broke the SLO; the value is the highest rate reached within the SLO.
+
+![E15 capacity by variant](E15-capacity.svg)
+
+![E15 p99 latency against load](E15-latency-vs-load.svg)
 
 ## E16 Closed vs open loop
 
 Same load with constant-arrival-rate and constant-vus: how much of the tail does the closed model hide?
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| open | `API_HOSTS=2 NODE_CLUSTER=2 RATE=880 DURATION=3m` | 3 | 880 (879–880) | 17 (17–18) | 208 (205–240) | 418 (409–935) | 1,282 (1,264–5,012) | 0.00 % | 0.00 % | 0.0 % | 153,917 | 2.34 | 8.64 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| open | 0 | 0 | 153,979 | 2 | 21 | 0 | 0 | 0 | 0 |
+
+![E16 p99 by variant](E16-p99.svg)
+
+![E16 max latency by variant](E16-max.svg)
+
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| closed | `API_HOSTS=2 NODE_CLUSTER=2 VUS=88 DURATION=3m` | 1 | 773 | 25 | 3,031 | 4,885 | 5,022 | 0.07 % | 0.00 % | 0.0 % | 136,295 | 2.04 | 7.59 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| closed | 0 | 0 | 137,186 | 6 | 16 | 0 | 0 | 0 | 0 |
+
+![E16 p99 by variant](E16-p99.svg)
+
+![E16 max latency by variant](E16-max.svg)
 
 ## E17 Spike and soak on the chosen config
 
@@ -147,4 +404,39 @@ Not run yet.
 
 Concurrency vs RPS × latency, and latency vs utilisation against M/M/c, over a load sweep of 20–100 % capacity.
 
-Not run yet.
+| Variant | Config | Repeats | RPS | p50 ms | p99 ms | p99.9 ms | max ms | Errors | 429 share | Cache hits | Engine calls | API CPU | Engine CPU |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| u20 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=220 DURATION=3m` | 3 | 220 (220–220) | 11 (11–11) | 97 (96–97) | 191 (186–193) | 415 (402–445) | 0.00 % | 0.00 % | 0.0 % | 39,014 | 0.76 | 1.9 |
+| u40 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=440 DURATION=3m` | 3 | 440 (440–440) | 12 (11–12) | 121 (120–122) | 249 (243–250) | 655 (589–733) | 0.00 % | 0.00 % | 0.0 % | 77,805 | 1.25 | 3.86 |
+| u60 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=660 DURATION=3m` | 3 | 660 (660–660) | 13 (13–13) | 158 (156–159) | 317 (316–332) | 788 (751–920) | 0.00 % | 0.00 % | 0.0 % | 117,274 | 1.71 | 6.14 |
+| u80 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=880 DURATION=3m` | 3 | 880 (879–880) | 17 (17–17) | 207 (207–208) | 414 (411–428) | 1,118 (1,040–1,225) | 0.00 % | 0.00 % | 0.0 % | 155,735 | 2.34 | 8.68 |
+| u90 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=990 DURATION=3m` | 3 | 989 (989–989) | 20 (20–21) | 251 (250–254) | 496 (492–499) | 1,308 (1,233–1,353) | 0.00 % | 0.00 % | 0.0 % | 173,201 | 2.65 | 10.16 |
+| u100 | `API_HOSTS=2 NODE_CLUSTER=2 RATE=1100 DURATION=3m` | 1 | 1,080 | 30 | 3,757 | 5,006 | 5,046 | 18.98 % | 18.60 % | 0.0 % | 156,119 | 2.44 | 8.37 |
+
+Pool and cache events during the run (median count over repeats):
+
+| Variant | cache:coalesced | cache:lock_wait | cache:miss | cache:remote_error | cache:remote_hit | pool:hedge | pool:hedge_win | pool:rejected | pool:retry |
+|---|---|---|---|---|---|---|---|---|---|
+| u20 | 0 | 0 | 39,305 | 0 | 0 | 0 | 0 | 0 | 0 |
+| u40 | 0 | 0 | 77,159 | 0 | 7 | 0 | 0 | 0 | 0 |
+| u60 | 0 | 0 | 117,757 | 0 | 12 | 0 | 0 | 0 | 0 |
+| u80 | 0 | 0 | 154,191 | 0 | 21 | 0 | 0 | 0 | 0 |
+| u90 | 0 | 0 | 173,232 | 1 | 25 | 0 | 0 | 0 | 0 |
+| u100 | 0 | 0 | 155,222 | 2 | 26 | 0 | 0 | 36,339 | 0 |
+
+![E18 p99 by variant](E18-p99.svg)
+
+| Variant | Engine λ (RPS) | Mean engine time S (ms) | L measured (in flight) | λ × S | Utilisation ρ = λS / workers | Mean client latency (ms) | M/M/c prediction (ms) |
+|---|---|---|---|---|---|---|---|
+| u20 | 220 | 8.7 | 1.68 | 1.91 | 13.7 % | 15 | 8.7 |
+| u40 | 440 | 10.5 | 4.52 | 4.61 | 32.9 % | 17.2 | 10.5 |
+| u60 | 660 | 13.1 | 8.42 | 8.62 | 61.6 % | 20.7 | 13.2 |
+| u80 | 880 | 16.7 | 14.68 | 14.68 | 104.8 % | 27.5 | – |
+| u90 | 990 | 20 | 18.5 | 19.75 | 141.0 % | 33.8 | – |
+| u100 | 878 | 22.9 | 19.93 | 20.14 | 143.8 % | 150 | – |
+
+The M/M/c prediction uses c = the number of workers and the measured mean engine time; it covers the engine tier only, so the client latency also contains the API and nginx.
+
+![E18 Little's law](E18-littles-law.svg)
+
+![E18 latency against utilisation](E18-mmc.svg)

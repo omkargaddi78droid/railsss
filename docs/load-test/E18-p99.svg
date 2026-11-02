@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 288" width="760" height="288" role="img" aria-label="E18: client p99 latency">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="288" fill="var(--surface)"/>
+<text class="title" x="16" y="26">E18: client p99 latency</text>
+<text class="sub" x="16" y="44">Whole run, median of the repeats; the line spans min–max</text>
+<line x1="67.2" x2="67.2" y1="56" y2="242" stroke="var(--axis)"/>
+<text class="tick" x="67.2" y="260" text-anchor="middle">0</text>
+<line x1="222.89999999999998" x2="222.89999999999998" y1="56" y2="242" stroke="var(--grid)"/>
+<text class="tick" x="222.89999999999998" y="260" text-anchor="middle">1,000</text>
+<line x1="378.59999999999997" x2="378.59999999999997" y1="56" y2="242" stroke="var(--grid)"/>
+<text class="tick" x="378.59999999999997" y="260" text-anchor="middle">2,000</text>
+<line x1="534.3" x2="534.3" y1="56" y2="242" stroke="var(--grid)"/>
+<text class="tick" x="534.3" y="260" text-anchor="middle">3,000</text>
+<line x1="690" x2="690" y1="56" y2="242" stroke="var(--grid)"/>
+<text class="tick" x="690" y="260" text-anchor="middle">4,000</text>
+<text x="378.6" y="280" text-anchor="middle">p99 latency (ms)</text>
+<text x="57.2" y="78" text-anchor="end">u20</text>
+<path d="M67.2 66h11.035120208899997a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-11.035120208899997z" fill="var(--s1)"><title>u20: 96.6</title></path>
+<line x1="82.124002257" x2="82.3276686003" y1="74" y2="74" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="90.3276686003" y="78">96.6</text>
+<text x="57.2" y="108" text-anchor="end">u40</text>
+<path d="M67.2 96h14.894654314999997a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-14.894654314999997z" fill="var(--s1)"><title>u40: 121</title></path>
+<line x1="85.8601771215" x2="86.17768413014397" y1="104" y2="104" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="94.17768413014397" y="108">121</text>
+<text x="57.2" y="138" text-anchor="end">u60</text>
+<path d="M67.2 126h20.6050480376a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-20.6050480376z" fill="var(--s1)"><title>u60: 158</title></path>
+<line x1="91.4204087817" x2="91.9877143434" y1="134" y2="134" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="99.9877143434" y="138">158</text>
+<text x="57.2" y="168" text-anchor="end">u80</text>
+<path d="M67.2 156h28.258691198549045a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-28.258691198549045z" fill="var(--s1)"><title>u80: 207</title></path>
+<line x1="99.3595883712" x2="99.6353501982" y1="164" y2="164" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="107.6353501982" y="168">207</text>
+<text x="57.2" y="198" text-anchor="end">u90</text>
+<path d="M67.2 186h35.017538426599984a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-35.017538426599984z" fill="var(--s1)"><title>u90: 251</title></path>
+<line x1="106.11331502639999" x2="106.72223070622204" y1="194" y2="194" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="114.72223070622204" y="198">251</text>
+<text x="57.2" y="228" text-anchor="end">u100</text>
+<path d="M67.2 216h581.0400964048999a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-581.0400964048999z" fill="var(--s1)"><title>u100: 3,757</title></path>
+<text class="val" x="660.2400964049" y="228">3,757</text>
+<line x1="145.05" x2="145.05" y1="56" y2="242" stroke="var(--crit)" stroke-width="1.5"/>
+<text x="150.05" y="52">SLO 500 ms</text>
+</svg>

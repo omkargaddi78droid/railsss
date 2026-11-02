@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e9-page10-gzip-on-r3\"}[30s]))","start":1793550668.144,"end":1793550894.566,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1793550883,"18.833333333333336"],[1793550888,"18.833333333333336"],[1793550893,"18.833333333333336"]]}]}}}

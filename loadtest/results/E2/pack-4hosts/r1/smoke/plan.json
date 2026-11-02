@@ -1,0 +1,177 @@
+{
+  "variant": "baseline",
+  "git_commit": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "image_tag": "d2a14e1-dirty",
+  "hosts": [
+    {
+      "name": "node01",
+      "public_ip": "44.197.244.130",
+      "private_ip": "10.40.1.114",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node02",
+      "public_ip": "98.80.202.128",
+      "private_ip": "10.40.1.61",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node03",
+      "public_ip": "3.235.92.61",
+      "private_ip": "10.40.1.12",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node04",
+      "public_ip": "100.27.7.180",
+      "private_ip": "10.40.1.45",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node05",
+      "public_ip": "44.202.197.36",
+      "private_ip": "10.40.1.10",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node06",
+      "public_ip": "44.214.15.225",
+      "private_ip": "10.40.1.212",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node07",
+      "public_ip": "3.91.2.65",
+      "private_ip": "10.40.1.216",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node08",
+      "public_ip": "100.48.218.98",
+      "private_ip": "10.40.1.151",
+      "roles": [
+        "worker"
+      ],
+      "phase": 1
+    },
+    {
+      "name": "node09",
+      "public_ip": "44.199.235.122",
+      "private_ip": "10.40.1.202",
+      "roles": [
+        "api",
+        "nginx"
+      ],
+      "phase": 3
+    },
+    {
+      "name": "node10",
+      "public_ip": "3.216.80.172",
+      "private_ip": "10.40.1.37",
+      "roles": [
+        "redis",
+        "monitoring"
+      ],
+      "phase": 1
+    }
+  ],
+  "workers": [
+    {
+      "id": "node01a",
+      "host": "node01",
+      "url": "http://10.40.1.114:7070",
+      "admin": "http://10.40.1.114:7071",
+      "cpuset": "0"
+    },
+    {
+      "id": "node01b",
+      "host": "node01",
+      "url": "http://10.40.1.114:7080",
+      "admin": "http://10.40.1.114:7081",
+      "cpuset": "1"
+    },
+    {
+      "id": "node02a",
+      "host": "node02",
+      "url": "http://10.40.1.61:7070",
+      "admin": "http://10.40.1.61:7071",
+      "cpuset": "0"
+    },
+    {
+      "id": "node02b",
+      "host": "node02",
+      "url": "http://10.40.1.61:7080",
+      "admin": "http://10.40.1.61:7081",
+      "cpuset": "1"
+    },
+    {
+      "id": "node03a",
+      "host": "node03",
+      "url": "http://10.40.1.12:7070",
+      "admin": "http://10.40.1.12:7071",
+      "cpuset": "0"
+    },
+    {
+      "id": "node03b",
+      "host": "node03",
+      "url": "http://10.40.1.12:7080",
+      "admin": "http://10.40.1.12:7081",
+      "cpuset": "1"
+    },
+    {
+      "id": "node04a",
+      "host": "node04",
+      "url": "http://10.40.1.45:7070",
+      "admin": "http://10.40.1.45:7071",
+      "cpuset": "0"
+    },
+    {
+      "id": "node04b",
+      "host": "node04",
+      "url": "http://10.40.1.45:7080",
+      "admin": "http://10.40.1.45:7081",
+      "cpuset": "1"
+    }
+  ],
+  "api": [
+    {
+      "host": "node09",
+      "url": "http://10.40.1.202:4000"
+    }
+  ],
+  "gateway": {
+    "host": "node09",
+    "public_url": "http://44.199.235.122",
+    "private_url": "http://10.40.1.202"
+  },
+  "monitoring": {
+    "host": "node10",
+    "public_ip": "3.216.80.172",
+    "prometheus_private": "http://10.40.1.37:9090"
+  },
+  "prewarm": false,
+  "warmer_host": "node09"
+}

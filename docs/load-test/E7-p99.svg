@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 198" width="760" height="198" role="img" aria-label="E7: client p99 latency">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="198" fill="var(--surface)"/>
+<text class="title" x="16" y="26">E7: client p99 latency</text>
+<text class="sub" x="16" y="44">Whole run, median of the repeats; the line spans min–max</text>
+<line x1="101.19999999999999" x2="101.19999999999999" y1="56" y2="152" stroke="var(--axis)"/>
+<text class="tick" x="101.19999999999999" y="170" text-anchor="middle">0</text>
+<line x1="297.46666666666664" x2="297.46666666666664" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="297.46666666666664" y="170" text-anchor="middle">200</text>
+<line x1="493.7333333333333" x2="493.7333333333333" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="493.7333333333333" y="170" text-anchor="middle">400</text>
+<line x1="690" x2="690" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="690" y="170" text-anchor="middle">600</text>
+<text x="395.6" y="190" text-anchor="middle">p99 latency (ms)</text>
+<text x="91.19999999999999" y="78" text-anchor="end">hedge-off</text>
+<path d="M101.19999999999999 66h98.86261369600007a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-98.86261369600007z" fill="var(--s1)"><title>hedge-off: 105</title></path>
+<line x1="202.12010312533332" x2="204.37606677333332" y1="74" y2="74" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="212.37606677333332" y="78">105</text>
+<text x="91.19999999999999" y="108" text-anchor="end">hedge-100</text>
+<path d="M101.19999999999999 96h105.42605218133332a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-105.42605218133332z" fill="var(--s1)"><title>hedge-100: 112</title></path>
+<line x1="208.62541282133333" x2="213.07855726933332" y1="104" y2="104" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="221.07855726933332" y="108">112</text>
+<text x="91.19999999999999" y="138" text-anchor="end">hedge-250</text>
+<path d="M101.19999999999999 126h98.12965435733332a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-98.12965435733332z" fill="var(--s1)"><title>hedge-250: 104</title></path>
+<line x1="202.6864639573333" x2="204.21989422677348" y1="134" y2="134" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="212.21989422677348" y="138">104</text>
+<line x1="591.8666666666666" x2="591.8666666666666" y1="56" y2="152" stroke="var(--crit)" stroke-width="1.5"/>
+<text x="596.8666666666666" y="52">SLO 500 ms</text>
+</svg>

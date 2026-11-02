@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" role="img" aria-label="E2: p99 latency against load">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="420" fill="var(--surface)"/>
+<text class="title" x="64" y="26">E2: p99 latency against load</text>
+<text class="sub" x="64" y="44">API p99 over 30 s windows during the ramp; band = min–max over repeats</text>
+<line x1="64" x2="736" y1="370" y2="370" stroke="var(--axis)"/>
+<text class="tick" x="56" y="374" text-anchor="end">0</text>
+<line x1="64" x2="736" y1="275.33333333333337" y2="275.33333333333337" stroke="var(--grid)"/>
+<text class="tick" x="56" y="279.33333333333337" text-anchor="end">200</text>
+<line x1="64" x2="736" y1="180.66666666666669" y2="180.66666666666669" stroke="var(--grid)"/>
+<text class="tick" x="56" y="184.66666666666669" text-anchor="end">400</text>
+<line x1="64" x2="736" y1="86" y2="86" stroke="var(--grid)"/>
+<text class="tick" x="56" y="90" text-anchor="end">600</text>
+<text class="tick" x="64" y="388" text-anchor="middle">0</text>
+<text class="tick" x="198.4" y="388" text-anchor="middle">100</text>
+<text class="tick" x="332.8" y="388" text-anchor="middle">200</text>
+<text class="tick" x="467.2" y="388" text-anchor="middle">300</text>
+<text class="tick" x="601.6" y="388" text-anchor="middle">400</text>
+<text class="tick" x="736" y="388" text-anchor="middle">500</text>
+<text x="400" y="410" text-anchor="middle">achieved requests per second</text>
+<text transform="translate(16 228) rotate(-90)" text-anchor="middle">p99 latency (ms)</text>
+<line x1="64" x2="736" y1="133.33333333333331" y2="133.33333333333331" stroke="var(--crit)" stroke-width="1.5"/>
+<text x="736" y="127.33333333333331" text-anchor="end">SLO 500 ms</text>
+<polygon points="96.1,326.6 117.6,326.8 139.0,327.2 160.4,326.9 181.9,327.8 203.3,328.3 224.7,328.1 246.1,328.4 267.6,327.9 289.0,326.8 310.4,327.5 331.9,327.8 353.3,328.2 374.7,327.5 396.1,327.9 417.6,328.3 439.0,328.5 460.4,327.5 481.9,326.8 503.3,327.3 524.7,327.5 546.1,327.7 567.6,328.4 589.0,327.0 610.4,326.5 631.9,326.2 653.3,326.3 674.7,325.7 696.1,325.7 696.1,325.7 674.7,325.7 653.3,326.3 631.9,326.2 610.4,326.5 589.0,327.0 567.6,328.4 546.1,327.7 524.7,327.5 503.3,327.3 481.9,326.8 460.4,327.5 439.0,328.5 417.6,328.3 396.1,327.9 374.7,327.5 353.3,328.2 331.9,327.8 310.4,327.5 289.0,326.8 267.6,327.9 246.1,328.4 224.7,328.1 203.3,328.3 181.9,327.8 160.4,326.9 139.0,327.2 117.6,326.8 96.1,326.6" fill="var(--s1)" opacity="0.1"/>
+<path d="M96.1 326.6L117.6 326.8L139.0 327.2L160.4 326.9L181.9 327.8L203.3 328.3L224.7 328.1L246.1 328.4L267.6 327.9L289.0 326.8L310.4 327.5L331.9 327.8L353.3 328.2L374.7 327.5L396.1 327.9L417.6 328.3L439.0 328.5L460.4 327.5L481.9 326.8L503.3 327.3L524.7 327.5L546.1 327.7L567.6 328.4L589.0 327.0L610.4 326.5L631.9 326.2L653.3 326.3L674.7 325.7L696.1 325.7" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>spread-8hosts</title></path>
+<circle cx="696.1" cy="325.7" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"><title>spread-8hosts: 93.5 at 470</title></circle>
+<polygon points="96.1,326.5 117.6,327.5 139.0,326.7 160.4,327.7 181.9,327.6 203.3,327.9 224.7,328.1 246.1,326.8 267.6,325.7 289.0,325.4 310.4,326.6 331.9,326.1 353.3,325.2 374.7,324.8 396.1,325.2 417.6,326.1 439.0,325.3 460.4,323.9 481.9,323.3 503.3,323.6 524.7,324.6 546.1,324.4 567.6,323.4 589.0,317.5 610.4,308.0 631.9,305.5 653.3,305.2 674.7,299.8 696.1,294.2 696.1,294.2 674.7,299.8 653.3,305.2 631.9,305.5 610.4,308.0 589.0,317.5 567.6,323.4 546.1,324.4 524.7,324.6 503.3,323.6 481.9,323.3 460.4,323.9 439.0,325.3 417.6,326.1 396.1,325.2 374.7,324.8 353.3,325.2 331.9,326.1 310.4,326.6 289.0,325.4 267.6,325.7 246.1,326.8 224.7,328.1 203.3,327.9 181.9,327.6 160.4,327.7 139.0,326.7 117.6,327.5 96.1,326.5" fill="var(--s2)" opacity="0.1"/>
+<path d="M96.1 326.5L117.6 327.5L139.0 326.7L160.4 327.7L181.9 327.6L203.3 327.9L224.7 328.1L246.1 326.8L267.6 325.7L289.0 325.4L310.4 326.6L331.9 326.1L353.3 325.2L374.7 324.8L396.1 325.2L417.6 326.1L439.0 325.3L460.4 323.9L481.9 323.3L503.3 323.6L524.7 324.6L546.1 324.4L567.6 323.4L589.0 317.5L610.4 308.0L631.9 305.5L653.3 305.2L674.7 299.8L696.1 294.2" fill="none" stroke="var(--s2)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>pack-4hosts</title></path>
+<circle cx="696.1" cy="294.2" r="4" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"><title>pack-4hosts: 160 at 470</title></circle>
+<polygon points="117.6,325.3 139.0,325.9 160.4,327.2 181.9,327.5 203.3,327.7 224.7,328.3 246.1,327.9 267.6,327.3 289.0,326.8 310.4,327.8 331.9,328.2 353.3,327.7 374.7,327.3 396.1,327.3 417.6,328.8 439.0,328.9 460.4,328.1 481.9,327.2 503.3,327.5 524.7,328.0 546.1,328.2 567.6,327.6 589.0,326.8 610.4,326.2 631.9,326.4 653.3,326.1 674.7,325.4 696.1,325.0 717.6,324.9 717.6,324.9 696.1,325.0 674.7,325.4 653.3,326.1 631.9,326.4 610.4,326.2 589.0,326.8 567.6,327.6 546.1,328.2 524.7,328.0 503.3,327.5 481.9,327.2 460.4,328.1 439.0,328.9 417.6,328.8 396.1,327.3 374.7,327.3 353.3,327.7 331.9,328.2 310.4,327.8 289.0,326.8 267.6,327.3 246.1,327.9 224.7,328.3 203.3,327.7 181.9,327.5 160.4,327.2 139.0,325.9 117.6,325.3" fill="var(--s3)" opacity="0.1"/>
+<path d="M117.6 325.3L139.0 325.9L160.4 327.2L181.9 327.5L203.3 327.7L224.7 328.3L246.1 327.9L267.6 327.3L289.0 326.8L310.4 327.8L331.9 328.2L353.3 327.7L374.7 327.3L396.1 327.3L417.6 328.8L439.0 328.9L460.4 328.1L481.9 327.2L503.3 327.5L524.7 328.0L546.1 328.2L567.6 327.6L589.0 326.8L610.4 326.2L631.9 326.4L653.3 326.1L674.7 325.4L696.1 325.0L717.6 324.9" fill="none" stroke="var(--s3)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><title>unpinned-8hosts</title></path>
+<circle cx="717.6" cy="324.9" r="4" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"><title>unpinned-8hosts: 95.3 at 486</title></circle>
+<line x1="64" x2="80" y1="62" y2="62" stroke="var(--s1)" stroke-width="3" stroke-linecap="round"/>
+<text x="86" y="66">spread-8hosts</text>
+<line x1="183.8" x2="199.8" y1="62" y2="62" stroke="var(--s2)" stroke-width="3" stroke-linecap="round"/>
+<text x="205.8" y="66">pack-4hosts</text>
+<line x1="290.4" x2="306.4" y1="62" y2="62" stroke="var(--s3)" stroke-width="3" stroke-linecap="round"/>
+<text x="312.4" y="66">unpinned-8hosts</text>
+</svg>

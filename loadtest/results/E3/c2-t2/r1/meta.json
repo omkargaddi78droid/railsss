@@ -1,0 +1,39 @@
+{
+  "experiment": "E3",
+  "title": "Threads per worker and pool concurrency",
+  "variant": "c2-t2",
+  "repeat": 1,
+  "testid": "e3-c2-t2-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "ENGINE_CONCURRENCY": "2",
+    "ENGINE_THREADS": "2"
+  },
+  "scenario": "breakpoint",
+  "k6_env": {
+    "START_RATE": "5",
+    "MAX_RATE": "900",
+    "DURATION": "5m"
+  },
+  "params": {
+    "MAX_RATE": 900
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T14:02:59.878Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 16,
+  "started_at": "2026-11-01T14:03:10.833Z",
+  "ended_at": "2026-11-01T14:06:21.165Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 190.33200001716614,
+  "status": "ok",
+  "finished_at": "2026-11-01T14:06:22.915Z"
+}

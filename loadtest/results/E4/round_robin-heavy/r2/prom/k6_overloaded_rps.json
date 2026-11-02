@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e4-round_robin-heavy-r2\"}[30s]))","start":1793544290.527,"end":1793544501.124,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

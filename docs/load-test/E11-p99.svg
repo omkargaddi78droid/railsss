@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 198" width="760" height="198" role="img" aria-label="E11: client p99 latency">
+<style>:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;--s8:#e34948;--crit:#d03b3b}@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#ffffff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767}}text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px;fill:var(--ink2)}.title{font-size:15px;font-weight:600;fill:var(--ink)}.sub{fill:var(--muted)}.tick{fill:var(--muted);font-variant-numeric:tabular-nums}.val{fill:var(--ink);font-variant-numeric:tabular-nums}</style>
+<rect width="760" height="198" fill="var(--surface)"/>
+<text class="title" x="16" y="26">E11: client p99 latency</text>
+<text class="sub" x="16" y="44">Whole run, median of the repeats; the line spans min–max</text>
+<line x1="114.8" x2="114.8" y1="56" y2="152" stroke="var(--axis)"/>
+<text class="tick" x="114.8" y="170" text-anchor="middle">0</text>
+<line x1="306.53333333333336" x2="306.53333333333336" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="306.53333333333336" y="170" text-anchor="middle">200</text>
+<line x1="498.2666666666667" x2="498.2666666666667" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="498.2666666666667" y="170" text-anchor="middle">400</text>
+<line x1="690" x2="690" y1="56" y2="152" stroke="var(--grid)"/>
+<text class="tick" x="690" y="170" text-anchor="middle">600</text>
+<text x="402.4" y="190" text-anchor="middle">p99 latency (ms)</text>
+<text x="104.8" y="78" text-anchor="end">no-coalesce</text>
+<path d="M114.8 66h49.32224216800002a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-49.32224216800002z" fill="var(--s1)"><title>no-coalesce: 55.6</title></path>
+<line x1="159.486333168" x2="200.19797298133335" y1="74" y2="74" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="208.19797298133335" y="78">55.6</text>
+<text x="104.8" y="108" text-anchor="end">coalesce</text>
+<path d="M114.8 96h51.206421932000026a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-51.206421932000026z" fill="var(--s1)"><title>coalesce: 57.6</title></path>
+<line x1="167.20737027066667" x2="191.67264330533334" y1="104" y2="104" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="199.67264330533334" y="108">57.6</text>
+<text x="104.8" y="138" text-anchor="end">redis-lock</text>
+<path d="M114.8 126h51.64754990613342a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-51.64754990613342z" fill="var(--s1)"><title>redis-lock: 58</title></path>
+<line x1="164.60538404666667" x2="174.92410827101338" y1="134" y2="134" stroke="var(--ink)" stroke-width="1.5"/>
+<text class="val" x="182.92410827101338" y="138">58</text>
+<line x1="594.1333333333333" x2="594.1333333333333" y1="56" y2="152" stroke="var(--crit)" stroke-width="1.5"/>
+<text x="599.1333333333333" y="52">SLO 500 ms</text>
+</svg>

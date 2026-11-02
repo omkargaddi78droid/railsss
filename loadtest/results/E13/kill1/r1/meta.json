@@ -1,0 +1,66 @@
+{
+  "experiment": "E13",
+  "title": "Failure injection",
+  "variant": "kill1",
+  "repeat": 1,
+  "testid": "e13-kill1-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "RATE": "660",
+    "DURATION": "5m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.6
+  },
+  "setup": [],
+  "during": [
+    {
+      "at": 60,
+      "action": {
+        "kind": "kill-workers",
+        "count": 1
+      }
+    },
+    {
+      "at": 180,
+      "action": {
+        "kind": "start-workers"
+      }
+    }
+  ],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T18:38:31.319Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T18:38:48.710Z",
+  "ended_at": "2026-11-01T18:43:49.645Z",
+  "prom_series": 33,
+  "k6_exit": 0,
+  "thresholds_passed": true,
+  "events": [
+    {
+      "at": 60.00099992752075,
+      "action": "kill-workers 1",
+      "ok": true,
+      "took_s": 0.18799996376037598
+    },
+    {
+      "at": 180.00099992752075,
+      "action": "start-workers",
+      "ok": true,
+      "took_s": 1.752000093460083
+    }
+  ],
+  "duration_s": 300.93499994277954,
+  "status": "ok",
+  "finished_at": "2026-11-01T18:43:51.790Z"
+}

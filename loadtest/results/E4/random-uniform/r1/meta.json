@@ -1,0 +1,43 @@
+{
+  "experiment": "E4",
+  "title": "Load-balancing strategy",
+  "variant": "random-uniform",
+  "repeat": 1,
+  "testid": "e4-random-uniform-r1",
+  "base": "baseline",
+  "deploy_overrides": {
+    "LB_STRATEGY": "random",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "WORKLOAD": "uniform",
+    "RATE": "770",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "HEAVY_CAPACITY": 0,
+    "LOAD": 0.7,
+    "HEAVY_FRAC": 0.1
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-01T14:51:13.636Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-01T14:51:27.775Z",
+  "ended_at": "2026-11-01T14:54:31.711Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 183.9359998703003,
+  "status": "ok",
+  "finished_at": "2026-11-01T14:54:33.424Z"
+}

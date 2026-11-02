@@ -1,0 +1,39 @@
+{
+  "experiment": "E1",
+  "title": "Worker count scaling",
+  "variant": "w1",
+  "repeat": 2,
+  "testid": "e1-w1-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "WORKERS": "1"
+  },
+  "scenario": "breakpoint",
+  "k6_env": {
+    "WORKLOAD": "uniform",
+    "START_RATE": "5",
+    "MAX_RATE": "100",
+    "DURATION": "5m"
+  },
+  "params": {
+    "PER_WORKER_RPS": 50
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-134",
+  "deploy_started_at": "2026-09-29T19:29:44.209Z",
+  "git_commit": "2f28ee5",
+  "image_tag": "2f28ee5",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 1,
+  "started_at": "2026-09-29T19:29:46.869Z",
+  "ended_at": "2026-09-29T19:31:31.197Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 104.32800006866455,
+  "status": "ok",
+  "finished_at": "2026-09-29T19:31:31.508Z"
+}

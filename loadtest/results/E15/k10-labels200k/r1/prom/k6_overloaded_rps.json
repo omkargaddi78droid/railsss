@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e15-k10-labels200k-r1\"}[30s]))","start":1793552995.439,"end":1793553308.036,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1793553295,"30.116666666666664"],[1793553300,"30.116666666666664"],[1793553305,"30.116666666666664"]]}]}}}

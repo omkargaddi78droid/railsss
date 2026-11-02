@@ -1,0 +1,78 @@
+{
+  "id": "E9",
+  "title": "Payload cost",
+  "question": "Rendered page size (10 vs 50 journeys) and gzip at nginx: bytes on the wire, API CPU per request, capacity.",
+  "base": "baseline",
+  "params": {
+    "MAX_RATE": 1650
+  },
+  "overrides": {
+    "deploy": {
+      "API_HOSTS": "2",
+      "NODE_CLUSTER": "2"
+    },
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "page10-gzip-off",
+      "deploy": {
+        "GZIP": "off",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "PAGE_SIZE": 10,
+        "START_RATE": 5,
+        "MAX_RATE": 1650,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "page10-gzip-on",
+      "deploy": {
+        "GZIP": "on",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "PAGE_SIZE": 10,
+        "START_RATE": 5,
+        "MAX_RATE": 1650,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "page50-gzip-off",
+      "deploy": {
+        "GZIP": "off",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "PAGE_SIZE": 50,
+        "START_RATE": 5,
+        "MAX_RATE": 1650,
+        "DURATION": "5m"
+      }
+    },
+    {
+      "name": "page50-gzip-on",
+      "deploy": {
+        "GZIP": "on",
+        "API_HOSTS": "2",
+        "NODE_CLUSTER": "2"
+      },
+      "scenario": "breakpoint",
+      "k6": {
+        "PAGE_SIZE": 50,
+        "START_RATE": 5,
+        "MAX_RATE": 1650,
+        "DURATION": "5m"
+      }
+    }
+  ]
+}

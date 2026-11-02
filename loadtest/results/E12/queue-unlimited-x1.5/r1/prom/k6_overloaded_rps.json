@@ -1,0 +1,1 @@
+{"query":"sum(rate(k6_route_overloaded_total{testid=\"e12-queue-unlimited-x1.5-r1\"}[30s]))","start":1793558022.914,"end":1793558178.635,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[]}}}

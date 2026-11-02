@@ -1,0 +1,42 @@
+{
+  "experiment": "E10",
+  "title": "Cache",
+  "variant": "nocache-s0-cache-rerun",
+  "repeat": 2,
+  "testid": "e10-nocache-s0-cache-rerun-r2",
+  "base": "baseline",
+  "deploy_overrides": {
+    "CACHE_BACKEND": "none",
+    "API_HOSTS": "2",
+    "NODE_CLUSTER": "2"
+  },
+  "scenario": "load",
+  "k6_env": {
+    "WORKLOAD": "zipf",
+    "ZIPF_S": "0",
+    "RATE": "770",
+    "DURATION": "3m"
+  },
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.7
+  },
+  "setup": [],
+  "during": [],
+  "controller": "ip-10-50-1-207",
+  "deploy_started_at": "2026-11-02T03:25:49.361Z",
+  "git_commit": "d2a14e1-dirty",
+  "image_tag": "d2a14e1-dirty",
+  "instance_type": "m7i-flex.large",
+  "region": "us-east-1",
+  "workers": 14,
+  "started_at": "2026-11-02T03:25:56.206Z",
+  "ended_at": "2026-11-02T03:29:00.185Z",
+  "prom_series": 33,
+  "k6_exit": 99,
+  "thresholds_passed": false,
+  "events": [],
+  "duration_s": 183.97899985313416,
+  "status": "ok",
+  "finished_at": "2026-11-02T03:29:01.985Z"
+}

@@ -1,0 +1,1 @@
+{"query":"max(k6_http_req_failed_rate{testid=\"e11-redis-lock-r2\"})","start":1793552834.114,"end":1793552894.69,"step":5,"response":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1793552859,"0"],[1793552864,"0"],[1793552869,"0"],[1793552874,"0"],[1793552879,"0"],[1793552884,"0"],[1793552889,"0"],[1793552894,"0"]]}]}}}

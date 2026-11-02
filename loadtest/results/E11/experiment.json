@@ -1,0 +1,67 @@
+{
+  "id": "E11",
+  "title": "Cache stampede",
+  "question": "A cold burst of mostly identical queries (zipf s=3) on 2 API processes: engine calls per distinct query with no coalescing, in-process coalescing, and the cross-process Redis lock.",
+  "base": "baseline",
+  "params": {
+    "CAPACITY": 1100,
+    "LOAD": 0.5
+  },
+  "overrides": {
+    "deploy": {
+      "API_HOSTS": "2",
+      "NODE_CLUSTER": "2"
+    },
+    "k6": {}
+  },
+  "variants": [
+    {
+      "name": "no-coalesce",
+      "deploy": {
+        "CACHE_COALESCE": "false",
+        "REDIS_LOCK_MS": 0,
+        "NODE_CLUSTER": "2",
+        "API_HOSTS": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 3,
+        "RATE": 550,
+        "DURATION": "30s"
+      }
+    },
+    {
+      "name": "coalesce",
+      "deploy": {
+        "CACHE_COALESCE": "true",
+        "REDIS_LOCK_MS": 0,
+        "NODE_CLUSTER": "2",
+        "API_HOSTS": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 3,
+        "RATE": 550,
+        "DURATION": "30s"
+      }
+    },
+    {
+      "name": "redis-lock",
+      "deploy": {
+        "CACHE_COALESCE": "true",
+        "REDIS_LOCK_MS": 2000,
+        "NODE_CLUSTER": "2",
+        "API_HOSTS": "2"
+      },
+      "scenario": "load",
+      "k6": {
+        "WORKLOAD": "zipf",
+        "ZIPF_S": 3,
+        "RATE": 550,
+        "DURATION": "30s"
+      }
+    }
+  ]
+}
